@@ -181,6 +181,13 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         updated.attempts += 1
         updated.lastAttemptedAt = Date.now
 
+        if case JobFailure.permanent = error {
+            updated.status = .permanentlyFailed
+            try? await store.save(updated)
+            Task { await processQueue() }
+            return
+        }
+
         guard let retry = updated.constraints.retry else {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
