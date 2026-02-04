@@ -8,8 +8,8 @@
 import Foundation
 
 public enum JobError: Error, Equatable, Sendable {
-  case unknownJobType(String)
-  case jobNotFound(UUID)
-  case notStarted
-  case registrationAfterStart
+    case unknownJobType(String)
+    case jobNotFound(UUID)
+    case notStarted
+    case registrationAfterStart
 }

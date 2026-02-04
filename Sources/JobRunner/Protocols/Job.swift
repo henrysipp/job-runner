@@ -8,6 +8,11 @@
 import Foundation
 
 public protocol Job<Context>: Codable, Sendable {
-  associatedtype Context: Sendable
-  func run(context: Context) async throws
+    associatedtype Context: Sendable
+    var constraints: JobConstraints { get }
+    nonisolated func run(context: Context) async throws
+}
+
+public extension Job {
+    var constraints: JobConstraints { .default }
 }

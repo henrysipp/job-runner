@@ -8,32 +8,38 @@
 import Foundation
 
 public nonisolated struct SerializedJob: Codable, Sendable {
-  public let id: UUID
-  public let typeName: String
-  public let priority: Priority
-  public let originalCreatedAt: Date
-  public var lastAttemptedAt: Date?
-  public var attempts: Int
-  public var status: JobStatus
-  public let jobData: Data
-  
-  public init(
-    id: UUID,
-    typeName: String,
-    priority: Priority,
-    originalCreatedAt: Date,
-    lastAttemptedAt: Date? = nil,
-    attempts: Int,
-    status: JobStatus,
-    jobData: Data
-  ) {
-    self.id = id
-    self.typeName = typeName
-    self.priority = priority
-    self.originalCreatedAt = originalCreatedAt
-    self.lastAttemptedAt = lastAttemptedAt
-    self.attempts = attempts
-    self.status = status
-    self.jobData = jobData
-  }
+    public let id: UUID
+    public let typeName: String
+    public let priority: Priority
+    public let constraints: JobConstraints
+    public let originalCreatedAt: Date
+    public var lastAttemptedAt: Date?
+    public var scheduledAt: Date?
+    public var attempts: Int
+    public var status: JobStatus
+    public let jobData: Data
+
+    public init(
+        id: UUID,
+        typeName: String,
+        priority: Priority,
+        constraints: JobConstraints = .default,
+        originalCreatedAt: Date,
+        lastAttemptedAt: Date? = nil,
+        scheduledAt: Date? = nil,
+        attempts: Int,
+        status: JobStatus,
+        jobData: Data
+    ) {
+        self.id = id
+        self.typeName = typeName
+        self.priority = priority
+        self.constraints = constraints
+        self.originalCreatedAt = originalCreatedAt
+        self.lastAttemptedAt = lastAttemptedAt
+        self.scheduledAt = scheduledAt
+        self.attempts = attempts
+        self.status = status
+        self.jobData = jobData
+    }
 }

@@ -8,10 +8,10 @@
 import Foundation
 
 public enum AssetDownloadError: Error, Equatable, Sendable {
-  case invalidURL(String)
-  case downloadFailed(URL, statusCode: Int)
-  case invalidImageData(URL)
-  case cacheFailed(URL)
-  case unsupportedAssetType(URL)
-  case networkError(URL, description: String)
+    case invalidURL(String)
+    case downloadFailed(URL, statusCode: Int)
+    case invalidImageData(URL)
+    case cacheFailed(URL)
+    case unsupportedAssetType(URL)
+    case networkError(URL, description: String)
 }

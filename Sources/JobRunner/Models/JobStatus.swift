@@ -8,7 +8,7 @@
 import Foundation
 
 public enum JobStatus: String, Codable, Sendable {
-  case pending
-  case running
-  case permanentlyFailed
+    case pending
+    case running
+    case permanentlyFailed
 }
