@@ -304,16 +304,16 @@ extension SimpleJobRunnerTests {
         try await runner.register(SlowJob.self)
         try await runner.start()
 
-        try await runner.enqueue(SlowJob(key: "status-test", duration: .milliseconds(100)), priority: .high)
+        try await runner.enqueue(SlowJob(key: "status-test", duration: .milliseconds(500)), priority: .high)
 
-        // Job takes 100ms, check at 50ms that it's running
-        try await Task.sleep(for: .milliseconds(50))
+        // Job takes 500ms, check at 100ms that it's running
+        try await Task.sleep(for: .milliseconds(100))
 
         let runningJobs = await store.getJobsByStatus(.running)
         #expect(!runningJobs.isEmpty)
 
-        // Wait for job to complete (100ms + overhead for async deletion)
-        try await Task.sleep(for: .milliseconds(200))
+        // Wait for job to complete (500ms + overhead for async deletion)
+        try await Task.sleep(for: .milliseconds(500))
 
         let deletedCount = await store.deletedJobIds.count
         #expect(deletedCount == 1)
@@ -975,13 +975,13 @@ extension SimpleJobRunnerTests {
         let initialStatus = await runner.currentStatus()
         #expect(initialStatus == .empty)
 
-        try await runner.enqueue(SlowJob(key: "snapshot-test", duration: .milliseconds(200)), priority: .medium)
-        try await Task.sleep(for: .milliseconds(50))
+        try await runner.enqueue(SlowJob(key: "snapshot-test", duration: .milliseconds(500)), priority: .medium)
+        try await Task.sleep(for: .milliseconds(100))
 
         let runningStatus = await runner.currentStatus()
         #expect(runningStatus.running == 1)
 
-        try await Task.sleep(for: .milliseconds(250))
+        try await Task.sleep(for: .milliseconds(500))
 
         let finalStatus = await runner.currentStatus()
         #expect(finalStatus.isIdle)
