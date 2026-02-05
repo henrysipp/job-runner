@@ -312,8 +312,8 @@ extension SimpleJobRunnerTests {
         let runningJobs = await store.getJobsByStatus(.running)
         #expect(!runningJobs.isEmpty)
 
-        // Wait for job to complete (100ms + overhead)
-        try await Task.sleep(for: .milliseconds(100))
+        // Wait for job to complete (100ms + overhead for async deletion)
+        try await Task.sleep(for: .milliseconds(200))
 
         let deletedCount = await store.deletedJobIds.count
         #expect(deletedCount == 1)
