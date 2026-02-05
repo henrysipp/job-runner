@@ -13,26 +13,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         run: swift test --enable-code-coverage
-      - name: Upload coverage data
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-data
-          path: .build
-          retention-days: 1
-
-  coverage:
-    needs: test
-    runs-on: macos-26
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Download coverage data
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-data
-          path: .build
       - name: Export coverage
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
           BIN_PATH=$(swift build --show-bin-path)
           PROFDATA=$(find .build -name 'default.profdata' -type f)
@@ -41,7 +23,9 @@ jobs:
             -instr-profile "$PROFDATA" \
             -format=lcov \
             --ignore-filename-regex='.build|Tests' > coverage.lcov
-      - uses: codecov/codecov-action@v4
+      - name: Upload to Codecov
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.lcov
