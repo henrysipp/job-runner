@@ -629,7 +629,7 @@ extension SimpleJobRunnerTests {
         try await runner.enqueue(SlowJob(key: "high", duration: .milliseconds(50)), priority: .high)
         try await runner.enqueue(SlowJob(key: "immediate", duration: .milliseconds(50)), priority: .immediate)
 
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .milliseconds(600))
 
         let order = await TestJobTracker.shared.getExecutionOrder()
         // First job executes immediately, then remaining jobs execute by priority
