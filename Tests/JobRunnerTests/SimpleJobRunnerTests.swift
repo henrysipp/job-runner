@@ -710,7 +710,9 @@ extension SimpleJobRunnerTests {
 struct NoRetryJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints { .noRetry }
+    var constraints: JobConstraints {
+        .noRetry
+    }
 
     func run(context _: Void) async throws {
         await TestJobTracker.shared.recordFailure(key)

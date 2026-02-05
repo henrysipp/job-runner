@@ -45,7 +45,7 @@ actor TestBarrier {
     }
 
     func release(_ count: Int = 1) {
-        for _ in 0..<count {
+        for _ in 0 ..< count {
             guard !waiting.isEmpty else { return }
             let cont = waiting.removeFirst()
             cont.resume()
@@ -78,7 +78,6 @@ struct BarrierJob: Job {
 
 @Suite(.serialized)
 struct ConcurrencyTests {
-
     @Test func respectsLimit() async throws {
         let barrier = TestBarrier()
         let policy = MockAdaptiveConcurrencyPolicy(limit: 2)
@@ -87,7 +86,7 @@ struct ConcurrencyTests {
         try await runner.start()
 
         // Enqueue 4 jobs
-        for i in 1...4 {
+        for i in 1 ... 4 {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 
@@ -117,7 +116,7 @@ struct ConcurrencyTests {
         try await runner.start()
 
         // Enqueue 6 jobs
-        for i in 1...6 {
+        for i in 1 ... 6 {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 
@@ -152,7 +151,7 @@ struct ConcurrencyTests {
         try await runner.start()
 
         // Enqueue 4 jobs
-        for i in 1...4 {
+        for i in 1 ... 4 {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 

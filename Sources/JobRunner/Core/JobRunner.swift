@@ -13,8 +13,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private let registry: JobRegistry<Context>
     private let concurrencyPolicy: ConcurrencyPolicy
 
-    private var isStarted = false
-    private var isStopped = false
+    private var isRunning = false
     private var isProcessing = false
     private var networkCallbackId: UUID?
     private var statusContinuations: [UUID: AsyncStream<QueueStatus>.Continuation] = [:]
@@ -26,7 +25,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     ) {
         self.context = context
         self.store = store
-        self.registry = JobRegistry()
+        registry = JobRegistry()
         self.concurrencyPolicy = concurrencyPolicy
     }
 
@@ -70,24 +69,31 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     public func register<J: Job>(_ type: J.Type) async throws where J.Context == Context {
-        guard !isStarted else {
+        guard !isRunning else {
             throw JobError.registrationAfterStart
         }
         registry.register(type)
     }
 
     public func start() async throws {
-        guard !isStarted else { return }
-        isStarted = true
-        isStopped = false
+        guard !isRunning else { return }
+        isRunning = true
 
         await NetworkMonitor.shared.start()
-        networkCallbackId = await NetworkMonitor.shared.addCallback { [weak self] in
+
+        // Capture callback ID before any await that could allow stop() to interleave
+        let callbackId = await NetworkMonitor.shared.addCallback { [weak self] in
             Task { [weak self] in
                 await self?.processQueue()
             }
         }
 
+        // Check if stop() was called during the await
+        guard isRunning else {
+            await NetworkMonitor.shared.removeCallback(callbackId)
+            return
+        }
+        networkCallbackId = callbackId
         let runningJobs = try await store.loadAll(status: .running)
         for var job in runningJobs {
             job.status = .pending
@@ -99,7 +105,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     public func stop() async {
-        isStopped = true
+        isRunning = false
         if let callbackId = networkCallbackId {
             await NetworkMonitor.shared.removeCallback(callbackId)
             networkCallbackId = nil
@@ -107,7 +113,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws where J.Context == Context {
-        guard isStarted else {
+        guard isRunning else {
             throw JobError.notStarted
         }
 
@@ -133,7 +139,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     private func processQueue() async {
-        guard !isStopped else { return }
+        guard isRunning else { return }
         guard !isProcessing else { return }
 
         isProcessing = true
@@ -141,10 +147,8 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         let now = Date.now
 
-        while !isStopped {
+        while isRunning {
             let runningCount = (try? await store.count(status: .running)) ?? 0
-            // Re-evaluated each iteration. If at capacity, we break and wait for a job
-            // to complete, which triggers processQueue again via jobCompleted().
             let maxConcurrent = await concurrencyPolicy.maxConcurrent()
             guard runningCount < maxConcurrent else { break }
 
@@ -188,11 +192,12 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     private func scheduleWakeUpIfNeeded() {
-        guard !isStopped else { return }
+        guard isRunning else { return }
 
         Task {
             let pendingJobs = (try? await store.loadAll(status: .pending)) ?? []
             let now = Date.now
+
             let nextScheduled = pendingJobs
                 .compactMap { $0.scheduledAt }
                 .filter { $0 > now }
@@ -204,7 +209,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             guard delay > 0 else { return }
 
             try? await Task.sleep(for: .seconds(delay))
-            guard !isStopped else { return }
+            guard isRunning else { return }
             await processQueue()
         }
     }
@@ -232,7 +237,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         updated.attempts += 1
         updated.lastAttemptedAt = Date.now
 
-        if case JobFailure.permanent = error {
+        if case .permanent(_)? = error as? JobFailure {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
             await emitStatus()

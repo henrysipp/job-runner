@@ -14,5 +14,7 @@ public protocol Job<Context>: Codable, Sendable {
 }
 
 public extension Job {
-    var constraints: JobConstraints { .default }
+    var constraints: JobConstraints {
+        .default
+    }
 }

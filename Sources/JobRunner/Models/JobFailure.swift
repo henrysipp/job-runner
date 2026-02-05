@@ -16,7 +16,7 @@ public enum JobFailure: Error, Sendable {
 
     public var underlyingError: any Error & Sendable {
         switch self {
-        case .transient(let error), .permanent(let error):
+        case let .transient(error), let .permanent(error):
             return error
         }
     }
