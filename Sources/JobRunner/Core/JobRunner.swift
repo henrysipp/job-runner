@@ -11,7 +11,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     public let context: Context
     private let store: JobStore
     private let registry: JobRegistry<Context>
-    private let maxConcurrent: Int
+    private let concurrencyPolicy: ConcurrencyPolicy
 
     private var isStarted = false
     private var isStopped = false
@@ -19,11 +19,19 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private var networkCallbackId: UUID?
     private var statusContinuations: [UUID: AsyncStream<QueueStatus>.Continuation] = [:]
 
-    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int = 4) {
+    public init(
+        context: Context,
+        store: JobStore = InMemoryJobStore(),
+        concurrencyPolicy: ConcurrencyPolicy = FixedConcurrencyPolicy(limit: 3)
+    ) {
         self.context = context
         self.store = store
-        registry = JobRegistry()
-        self.maxConcurrent = maxConcurrent
+        self.registry = JobRegistry()
+        self.concurrencyPolicy = concurrencyPolicy
+    }
+
+    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int) {
+        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent))
     }
 
     public var statusStream: AsyncStream<QueueStatus> {
@@ -134,7 +142,10 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let now = Date.now
 
         while !isStopped {
-            let runningCount = (try? await store.loadAll(status: .running).count) ?? 0
+            let runningCount = (try? await store.count(status: .running)) ?? 0
+            // Re-evaluated each iteration. If at capacity, we break and wait for a job
+            // to complete, which triggers processQueue again via jobCompleted().
+            let maxConcurrent = await concurrencyPolicy.maxConcurrent()
             guard runningCount < maxConcurrent else { break }
 
             let pendingJobs = (try? await store.loadAll(status: .pending)) ?? []
