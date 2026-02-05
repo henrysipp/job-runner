@@ -1,5 +1,7 @@
 # JobRunner
 
+[![codecov](https://codecov.io/gh/henrysipp/job-runner/branch/main/graph/badge.svg)](https://codecov.io/gh/henrysipp/job-runner)
+
 A simple Swift actor-based job queue with persistence, retry support, and priority scheduling.
 Supports Swift Concurrency and the Swift 6 language mode.
 
