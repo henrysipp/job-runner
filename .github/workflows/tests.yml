@@ -15,6 +15,7 @@ jobs:
         run: swift test
 
   coverage:
+    needs: test
     runs-on: macos-26
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
@@ -24,7 +25,19 @@ jobs:
           xcodebuild test \
             -scheme JobRunner \
             -destination "platform=macOS" \
+            -derivedDataPath Build/ \
             -enableCodeCoverage YES | xcpretty
+      - name: Export coverage
+        run: |
+          cd Build/Build/ProfileData
+          cd $(ls -d */|head -n 1)
+          directory=${PWD##*/}
+          pathCoverage=Build/Build/ProfileData/${directory}/Coverage.profdata
+          cd ../../../../
+          xcrun llvm-cov export -format="lcov" \
+            -instr-profile $pathCoverage \
+            Build/Build/Products/Debug/JobRunner.o > coverage.lcov
       - uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.lcov
