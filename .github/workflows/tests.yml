@@ -12,7 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test
-        run: swift test
+        run: swift test --enable-code-coverage
+      - name: Upload coverage data
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: .build
+          retention-days: 1
 
   coverage:
     needs: test
@@ -20,23 +27,20 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-      - name: Test with coverage
-        run: |
-          xcodebuild test \
-            -scheme JobRunner \
-            -destination "platform=macOS" \
-            -derivedDataPath Build/ \
-            -enableCodeCoverage YES | xcpretty
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data
+          path: .build
       - name: Export coverage
         run: |
-          cd Build/Build/ProfileData
-          cd $(ls -d */|head -n 1)
-          directory=${PWD##*/}
-          pathCoverage=Build/Build/ProfileData/${directory}/Coverage.profdata
-          cd ../../../../
-          xcrun llvm-cov export -format="lcov" \
-            -instr-profile $pathCoverage \
-            Build/Build/Products/Debug/JobRunner.o > coverage.lcov
+          BIN_PATH=$(swift build --show-bin-path)
+          PROFDATA=$(find .build -name 'default.profdata' -type f)
+          BINARY="$BIN_PATH/JobRunnerPackageTests.xctest/Contents/MacOS/JobRunnerPackageTests"
+          xcrun llvm-cov export "$BINARY" \
+            -instr-profile "$PROFDATA" \
+            -format=lcov \
+            --ignore-filename-regex='.build|Tests' > coverage.lcov
       - uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
