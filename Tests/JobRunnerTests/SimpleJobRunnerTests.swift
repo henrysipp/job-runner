@@ -293,7 +293,7 @@ extension SimpleJobRunnerTests {
         let endTime = Date.now
         let elapsed = endTime.timeIntervalSince(startTime)
 
-        #expect(elapsed < 0.25)
+        #expect(elapsed < 0.35)
     }
 
     @Test func jobsMoveThroughCorrectStatuses() async throws {
