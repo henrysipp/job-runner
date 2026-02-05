@@ -17,12 +17,48 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private var isStopped = false
     private var isProcessing = false
     private var networkCallbackId: UUID?
+    private var statusContinuations: [UUID: AsyncStream<QueueStatus>.Continuation] = [:]
 
     public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int = 4) {
         self.context = context
         self.store = store
         registry = JobRegistry()
         self.maxConcurrent = maxConcurrent
+    }
+
+    public var statusStream: AsyncStream<QueueStatus> {
+        AsyncStream { continuation in
+            let id = UUID()
+            statusContinuations[id] = continuation
+            continuation.onTermination = { [weak self] _ in
+                Task { [weak self] in
+                    await self?.removeContinuation(id)
+                }
+            }
+            Task { [weak self] in
+                if let status = await self?.currentStatus() {
+                    continuation.yield(status)
+                }
+            }
+        }
+    }
+
+    private func removeContinuation(_ id: UUID) {
+        statusContinuations.removeValue(forKey: id)
+    }
+
+    public func currentStatus() async -> QueueStatus {
+        let pending = (try? await store.count(status: .pending)) ?? 0
+        let running = (try? await store.count(status: .running)) ?? 0
+        let failed = (try? await store.count(status: .permanentlyFailed)) ?? 0
+        return QueueStatus(pending: pending, running: running, failed: failed)
+    }
+
+    private func emitStatus() async {
+        let status = await currentStatus()
+        for continuation in statusContinuations.values {
+            continuation.yield(status)
+        }
     }
 
     public func register<J: Job>(_ type: J.Type) async throws where J.Context == Context {
@@ -50,6 +86,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             try await store.save(job)
         }
 
+        await emitStatus()
         Task { await processQueue() }
     }
 
@@ -82,6 +119,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         )
 
         try await store.save(serialized)
+        await emitStatus()
 
         Task { await processQueue() }
     }
@@ -107,6 +145,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             var running = next
             running.status = .running
             try? await store.save(running)
+            await emitStatus()
 
             Task {
                 await executeJob(running)
@@ -173,6 +212,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     private func jobCompleted() async {
+        await emitStatus()
         Task { await processQueue() }
     }
 
@@ -184,6 +224,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         if case JobFailure.permanent = error {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
+            await emitStatus()
             Task { await processQueue() }
             return
         }
@@ -191,6 +232,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         guard let retry = updated.constraints.retry else {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
+            await emitStatus()
             Task { await processQueue() }
             return
         }
@@ -206,6 +248,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         }
 
         try? await store.save(updated)
+        await emitStatus()
         Task { await processQueue() }
     }
 

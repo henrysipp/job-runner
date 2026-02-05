@@ -31,4 +31,8 @@ public actor InMemoryJobStore: JobStore {
     public func delete(id: UUID) async throws {
         jobs.removeValue(forKey: id)
     }
+
+    public func count(status: JobStatus) async throws -> Int {
+        jobs.values.filter { $0.status == status }.count
+    }
 }

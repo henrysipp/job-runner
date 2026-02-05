@@ -111,6 +111,10 @@ actor MockJobStore: JobStore {
         savedJobs.removeAll { $0.id == id }
     }
 
+    func count(status: JobStatus) async throws -> Int {
+        savedJobs.filter { $0.status == status }.count
+    }
+
     func reset() {
         savedJobs.removeAll()
         deletedJobIds.removeAll()
@@ -953,6 +957,49 @@ extension SimpleJobRunnerTests {
 
         let failedJobs = await store.getJobsByStatus(.permanentlyFailed)
         #expect(failedJobs.count == 1)
+    }
+}
+
+// MARK: - Status Tests
+
+extension SimpleJobRunnerTests {
+    @Test func currentStatusReturnsSnapshot() async throws {
+        try await prepareTest()
+
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        try await runner.register(SlowJob.self)
+        try await runner.start()
+
+        let initialStatus = await runner.currentStatus()
+        #expect(initialStatus == .empty)
+
+        try await runner.enqueue(SlowJob(key: "snapshot-test", duration: .milliseconds(200)), priority: .medium)
+        try await Task.sleep(for: .milliseconds(50))
+
+        let runningStatus = await runner.currentStatus()
+        #expect(runningStatus.running == 1)
+
+        try await Task.sleep(for: .milliseconds(250))
+
+        let finalStatus = await runner.currentStatus()
+        #expect(finalStatus.isIdle)
+    }
+
+    @Test func currentStatusTracksFailed() async throws {
+        try await prepareTest()
+
+        let store = MockJobStore()
+        let runner = SimpleJobRunner(context: (), store: store, maxConcurrent: 1)
+        try await runner.register(NoRetryJob.self)
+        try await runner.start()
+
+        try await runner.enqueue(NoRetryJob(key: "fail-status-test"), priority: .medium)
+        try await Task.sleep(for: .milliseconds(300))
+
+        let status = await runner.currentStatus()
+        #expect(status.failed == 1)
+        #expect(status.pending == 0)
+        #expect(status.running == 0)
     }
 }
 

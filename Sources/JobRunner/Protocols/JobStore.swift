@@ -13,4 +13,5 @@ public protocol JobStore: Sendable {
     func loadAll() async throws -> [SerializedJob]
     func loadAll(status: JobStatus) async throws -> [SerializedJob]
     func delete(id: UUID) async throws
+    func count(status: JobStatus) async throws -> Int
 }
