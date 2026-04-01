@@ -9,6 +9,7 @@ import Foundation
 
 public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
     public let context: Context
+    public let eventHandler: (any JobEventHandler)?
     public var registeredTypes: [String] = []
     private var enqueuedJobsInternal: [(job: Any, priority: Priority)] = []
     public var startCallCount: Int = 0
@@ -18,8 +19,9 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
     private var shouldThrowOnStart: Error?
     private var shouldThrowOnEnqueue: Error?
 
-    public init(context: Context) {
+    public init(context: Context, eventHandler: (any JobEventHandler)? = nil) {
         self.context = context
+        self.eventHandler = eventHandler
     }
 
     public func register<J: Job>(_ type: J.Type) async throws where J.Context == Context {

@@ -12,6 +12,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private let store: JobStore
     private let registry: JobRegistry<Context>
     private let concurrencyPolicy: ConcurrencyPolicy
+    private let eventHandler: (any JobEventHandler)?
 
     private var isRunning = false
     private var isProcessing = false
@@ -21,16 +22,18 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     public init(
         context: Context,
         store: JobStore = InMemoryJobStore(),
-        concurrencyPolicy: ConcurrencyPolicy = FixedConcurrencyPolicy(limit: 3)
+        concurrencyPolicy: ConcurrencyPolicy = FixedConcurrencyPolicy(limit: 3),
+        eventHandler: (any JobEventHandler)? = nil
     ) {
         self.context = context
         self.store = store
         registry = JobRegistry()
         self.concurrencyPolicy = concurrencyPolicy
+        self.eventHandler = eventHandler
     }
 
-    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int) {
-        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent))
+    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int, eventHandler: (any JobEventHandler)? = nil) {
+        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent), eventHandler: eventHandler)
     }
 
     public var statusStream: AsyncStream<QueueStatus> {
@@ -133,6 +136,14 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         )
 
         try await store.save(serialized)
+
+        await eventHandler?.jobEnqueued(JobEnqueuedEvent(
+            id: serialized.id,
+            jobType: J.self,
+            priority: priority,
+            jobData: String(data: jobData, encoding: .utf8) ?? ""
+        ))
+
         await emitStatus()
 
         Task { await processQueue() }
@@ -215,9 +226,30 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     private func executeJob(_ serialized: SerializedJob) async {
+        let jobDataString = String(data: serialized.jobData, encoding: .utf8) ?? ""
+
         do {
             let job = try registry.decode(serialized)
+            let jobType = type(of: job) as Any.Type
+
+            await eventHandler?.jobStarted(JobStartedEvent(
+                id: serialized.id,
+                jobType: jobType,
+                attempt: serialized.attempts + 1,
+                jobData: jobDataString
+            ))
+
+            let clock = ContinuousClock()
+            let start = clock.now
             try await job.run(context: context)
+            let duration = clock.now - start
+
+            await eventHandler?.jobCompleted(JobCompletedEvent(
+                id: serialized.id,
+                jobType: jobType,
+                duration: duration,
+                jobData: jobDataString
+            ))
 
             try? await store.delete(id: serialized.id)
             await jobCompleted()
@@ -237,9 +269,24 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         updated.attempts += 1
         updated.lastAttemptedAt = Date.now
 
+        let jobType = registry.resolveType(serialized.typeName) ?? Never.self as Any.Type
+        let sendableError = error as any Error & Sendable
+        let jobDataString = String(data: serialized.jobData, encoding: .utf8) ?? ""
+
         if case .permanent(_)? = error as? JobFailure {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
+
+            await eventHandler?.jobFailed(JobFailedEvent(
+                id: serialized.id,
+                jobType: jobType,
+                error: sendableError,
+                attempt: updated.attempts,
+                willRetry: false,
+                nextRetryAt: nil,
+                jobData: jobDataString
+            ))
+
             await emitStatus()
             Task { await processQueue() }
             return
@@ -248,22 +295,50 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         guard let retry = updated.constraints.retry else {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
+
+            await eventHandler?.jobFailed(JobFailedEvent(
+                id: serialized.id,
+                jobType: jobType,
+                error: sendableError,
+                attempt: updated.attempts,
+                willRetry: false,
+                nextRetryAt: nil,
+                jobData: jobDataString
+            ))
+
             await emitStatus()
             Task { await processQueue() }
             return
         }
+
+        var willRetry = false
+        var nextRetryAt: Date?
 
         if updated.attempts >= retry.maxAttempts {
             updated.status = .permanentlyFailed
         } else if let delay = retry.delay(forAttempt: updated.attempts) {
             updated.status = .pending
             updated.scheduledAt = Date.now.addingTimeInterval(delay)
+            willRetry = true
+            nextRetryAt = updated.scheduledAt
         } else {
             updated.status = .pending
             updated.scheduledAt = nil
+            willRetry = true
         }
 
         try? await store.save(updated)
+
+        await eventHandler?.jobFailed(JobFailedEvent(
+            id: serialized.id,
+            jobType: jobType,
+            error: sendableError,
+            attempt: updated.attempts,
+            willRetry: willRetry,
+            nextRetryAt: nextRetryAt,
+            jobData: jobDataString
+        ))
+
         await emitStatus()
         Task { await processQueue() }
     }
