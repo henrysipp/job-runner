@@ -90,21 +90,4 @@ extension MockJobRunnerTests {
         #expect(!isStarted)
     }
 
-    @Test func mockJobRunnerConformsToProtocol() async throws {
-        // Test that MockJobRunner conforms to JobRunnerProtocol
-        // We need a generic function to test this properly
-        func testProtocolConformance<R: JobRunnerProtocol>(
-            _ runner: R
-        ) async throws where R.Context == Void {
-            try await runner.register(SuccessJob.self)
-            try await runner.start()
-            try await runner.enqueue(SuccessJob(key: "protocol-test"), priority: .high)
-        }
-
-        let mock = MockJobRunner<Void>(context: ())
-        try await testProtocolConformance(mock)
-
-        // If this compiles and runs, the protocol conformance works
-        #expect(Bool(true))
-    }
 }

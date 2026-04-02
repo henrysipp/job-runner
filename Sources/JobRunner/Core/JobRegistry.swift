@@ -21,6 +21,10 @@ final nonisolated class JobRegistry<Context: Sendable> {
         return (typeName, data)
     }
 
+    func resolveType(_ typeName: String) -> Any.Type? {
+        types[typeName] as? Any.Type
+    }
+
     func decode(_ serialized: SerializedJob) throws -> any Job<Context> {
         guard let type = types[serialized.typeName] else {
             throw JobError.unknownJobType(serialized.typeName)
