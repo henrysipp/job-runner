@@ -76,7 +76,7 @@ private actor SlowCompletionDelegate: JobRunnerDelegate {
 @Suite(.serialized)
 struct JobRunnerDelegateBehaviorTests {
     @Test func nonSendableErrorIsReportedAsSnapshot() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let delegate = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)

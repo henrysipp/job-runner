@@ -88,7 +88,7 @@ private struct EventNoRetryFailJob: Job {
 @Suite(.serialized)
 struct JobRunnerDelegateTests {
     @Test func enqueuedEventFires() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -107,7 +107,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func startedEventFires() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -125,7 +125,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func completedEventFires() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -143,7 +143,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func failedEventWithRetry() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -171,7 +171,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func failedEventPermanentFailure() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -190,7 +190,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func failedEventNoRetryConstraint() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -207,7 +207,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func jobDataContainsEncodedProperties() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
@@ -224,7 +224,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func noHandlerDoesNotCrash() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
         try await runner.register(EventTestJob.self)
@@ -238,7 +238,7 @@ struct JobRunnerDelegateTests {
     }
 
     @Test func eventOrderIsCorrect() async throws {
-        try await prepareTest()
+        try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)

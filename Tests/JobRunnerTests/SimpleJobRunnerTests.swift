@@ -77,7 +77,7 @@ actor TestJobTracker {
 /// Helper to ensure test isolation
 func prepareTest() async throws {
     // Wait for any jobs from previous test to finish
-    try await Task.sleep(for: .milliseconds(100))
+    try await waitForBackgroundJobs()
     // Reset tracker for clean state
     await TestJobTracker.shared.reset()
 }
