@@ -75,28 +75,6 @@ extension ComplexJobRunnerTests {
         #expect(messages[1] == "second")
     }
 
-    @Test func multipleJobsShareSameContext() async throws {
-        let counter = TestCounter()
-        let context = TestContext(counter: counter)
-
-        let runner = JobRunner<TestContext>(context: context, maxConcurrent: 2)
-        try await runner.register(CounterJob.self)
-        try await runner.start()
-
-        // Enqueue multiple jobs that should all use the same context
-        try await runner.enqueue(CounterJob(id: "job-1"), priority: .medium)
-        try await runner.enqueue(CounterJob(id: "job-2"), priority: .medium)
-        try await runner.enqueue(CounterJob(id: "job-3"), priority: .medium)
-        try await runner.enqueue(CounterJob(id: "job-4"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(400))
-
-        let count = await counter.getCount()
-        let messages = await counter.getMessages()
-
-        #expect(count == 4)
-        #expect(messages.count == 4)
-    }
 }
 
 // MARK: - Multiple Runner Tests

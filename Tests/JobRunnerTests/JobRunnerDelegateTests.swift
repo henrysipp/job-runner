@@ -11,33 +11,41 @@ import Testing
 
 // MARK: - Test Delegate
 
-actor RecordingDelegate: JobRunnerDelegate {
-    var enqueued: [JobEnqueuedEvent] = []
-    var started: [JobStartedEvent] = []
-    var completed: [JobCompletedEvent] = []
-    var failed: [JobFailedEvent] = []
+final class RecordingDelegate: JobRunnerDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _enqueued: [JobEnqueuedEvent] = []
+    private var _started: [JobStartedEvent] = []
+    private var _completed: [JobCompletedEvent] = []
+    private var _failed: [JobFailedEvent] = []
 
-    func jobEnqueued(_ event: JobEnqueuedEvent) async {
-        enqueued.append(event)
+    var enqueued: [JobEnqueuedEvent] { lock.withLock { _enqueued } }
+    var started: [JobStartedEvent] { lock.withLock { _started } }
+    var completed: [JobCompletedEvent] { lock.withLock { _completed } }
+    var failed: [JobFailedEvent] { lock.withLock { _failed } }
+
+    func jobEnqueued(_ event: JobEnqueuedEvent) {
+        lock.withLock { _enqueued.append(event) }
     }
 
-    func jobStarted(_ event: JobStartedEvent) async {
-        started.append(event)
+    func jobStarted(_ event: JobStartedEvent) {
+        lock.withLock { _started.append(event) }
     }
 
-    func jobCompleted(_ event: JobCompletedEvent) async {
-        completed.append(event)
+    func jobCompleted(_ event: JobCompletedEvent) {
+        lock.withLock { _completed.append(event) }
     }
 
-    func jobFailed(_ event: JobFailedEvent) async {
-        failed.append(event)
+    func jobFailed(_ event: JobFailedEvent) {
+        lock.withLock { _failed.append(event) }
     }
 
     func reset() {
-        enqueued.removeAll()
-        started.removeAll()
-        completed.removeAll()
-        failed.removeAll()
+        lock.withLock {
+            _enqueued.removeAll()
+            _started.removeAll()
+            _completed.removeAll()
+            _failed.removeAll()
+        }
     }
 }
 
@@ -99,7 +107,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventTestJob(key: "enqueue-test"), priority: .high)
         try await Task.sleep(for: .milliseconds(200))
 
-        let events = await handler.enqueued
+        let events = handler.enqueued
         #expect(events.count == 1)
         #expect(events[0].jobType is EventTestJob.Type)
         #expect(events[0].priority == .high)
@@ -118,7 +126,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventTestJob(key: "start-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let events = await handler.started
+        let events = handler.started
         #expect(events.count == 1)
         #expect(events[0].jobType is EventTestJob.Type)
         #expect(events[0].attempt == 1)
@@ -136,7 +144,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventTestJob(key: "complete-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let events = await handler.completed
+        let events = handler.completed
         #expect(events.count == 1)
         #expect(events[0].jobType is EventTestJob.Type)
         #expect(events[0].duration > .zero)
@@ -154,7 +162,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventFailingJob(key: "retry-test"))
         try await Task.sleep(for: .milliseconds(500))
 
-        let events = await handler.failed
+        let events = handler.failed
         #expect(events.count == 3)
 
         // First two attempts should indicate willRetry
@@ -182,7 +190,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventPermanentFailJob(key: "permanent-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let events = await handler.failed
+        let events = handler.failed
         #expect(events.count == 1)
         #expect(events[0].willRetry == false)
         #expect(events[0].attempt == 1)
@@ -201,7 +209,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventNoRetryFailJob(key: "no-retry-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let events = await handler.failed
+        let events = handler.failed
         #expect(events.count == 1)
         #expect(events[0].willRetry == false)
     }
@@ -218,7 +226,7 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventTestJob(key: "json-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let event = await handler.enqueued.first
+        let event = handler.enqueued.first
         #expect(event != nil)
         #expect(event!.jobData.contains("json-test"))
     }
@@ -249,10 +257,10 @@ struct JobRunnerDelegateTests {
         try await runner.enqueue(EventTestJob(key: "order-test"))
         try await Task.sleep(for: .milliseconds(200))
 
-        let enqueuedCount = await handler.enqueued.count
-        let startedCount = await handler.started.count
-        let completedCount = await handler.completed.count
-        let failedCount = await handler.failed.count
+        let enqueuedCount = handler.enqueued.count
+        let startedCount = handler.started.count
+        let completedCount = handler.completed.count
+        let failedCount = handler.failed.count
 
         #expect(enqueuedCount == 1)
         #expect(startedCount == 1)

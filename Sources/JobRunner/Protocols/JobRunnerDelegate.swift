@@ -8,15 +8,15 @@
 import Foundation
 
 public protocol JobRunnerDelegate: Sendable {
-    func jobEnqueued(_ event: JobEnqueuedEvent) async
-    func jobStarted(_ event: JobStartedEvent) async
-    func jobCompleted(_ event: JobCompletedEvent) async
-    func jobFailed(_ event: JobFailedEvent) async
+    func jobEnqueued(_ event: JobEnqueuedEvent)
+    func jobStarted(_ event: JobStartedEvent)
+    func jobCompleted(_ event: JobCompletedEvent)
+    func jobFailed(_ event: JobFailedEvent)
 }
 
 extension JobRunnerDelegate {
-    public func jobEnqueued(_ event: JobEnqueuedEvent) async {}
-    public func jobStarted(_ event: JobStartedEvent) async {}
-    public func jobCompleted(_ event: JobCompletedEvent) async {}
-    public func jobFailed(_ event: JobFailedEvent) async {}
+    public func jobEnqueued(_ event: JobEnqueuedEvent) {}
+    public func jobStarted(_ event: JobStartedEvent) {}
+    public func jobCompleted(_ event: JobCompletedEvent) {}
+    public func jobFailed(_ event: JobFailedEvent) {}
 }

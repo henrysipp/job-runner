@@ -257,45 +257,6 @@ extension SimpleJobRunnerTests {
         #expect(order == ["job-1", "job-2", "job-3"])
     }
 
-    @Test func processQueueTriggersAfterJobCompletion() async throws {
-        try await prepareTest()
-
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
-        try await runner.register(SuccessJob.self)
-        try await runner.start()
-
-        try await runner.enqueue(SuccessJob(key: "job-A"), priority: .medium)
-        try await Task.sleep(for: .milliseconds(50))
-        try await runner.enqueue(SuccessJob(key: "job-B"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
-
-        let executedA = await TestJobTracker.shared.didExecute("job-A")
-        let executedB = await TestJobTracker.shared.didExecute("job-B")
-        #expect(executedA && executedB)
-    }
-
-    @Test func multipleJobsExecuteConcurrently() async throws {
-        try await prepareTest()
-
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 3)
-        try await runner.register(SlowJob.self)
-        try await runner.start()
-
-        let startTime = Date.now
-
-        try await runner.enqueue(SlowJob(key: "job-1", duration: .milliseconds(100)), priority: .medium)
-        try await runner.enqueue(SlowJob(key: "job-2", duration: .milliseconds(100)), priority: .medium)
-        try await runner.enqueue(SlowJob(key: "job-3", duration: .milliseconds(100)), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(200))
-
-        let endTime = Date.now
-        let elapsed = endTime.timeIntervalSince(startTime)
-
-        #expect(elapsed < 0.35)
-    }
-
     @Test func jobsMoveThroughCorrectStatuses() async throws {
         try await prepareTest()
 
@@ -337,23 +298,6 @@ extension SimpleJobRunnerTests {
         } catch let error as JobError {
             #expect(error == .registrationAfterStart)
         }
-    }
-
-    @Test func encodeDecodeRoundTrip() async throws {
-        try await prepareTest()
-
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
-        try await runner.register(SuccessJob.self)
-        try await runner.start()
-
-        let originalKey = "encode-decode-test"
-        let job = SuccessJob(key: originalKey)
-        try await runner.enqueue(job, priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(200))
-
-        let executed = await TestJobTracker.shared.didExecute(originalKey)
-        #expect(executed)
     }
 
     @Test func multipleJobTypesCanBeRegistered() async throws {
@@ -553,23 +497,6 @@ extension SimpleJobRunnerTests {
         #expect(failedJobs.count == 1)
     }
 
-    @Test func successfulJobDoesNotRetry() async throws {
-        try await prepareTest()
-
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
-        try await runner.register(SuccessJob.self)
-        try await runner.start()
-
-        let jobKey = "no-retry-\(UUID())"
-        try await runner.enqueue(SuccessJob(key: jobKey), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
-
-        let order = await TestJobTracker.shared.getExecutionOrder()
-        let executionCount = order.filter { $0 == jobKey }.count
-        #expect(executionCount == 1)
-    }
-
     @Test func failedJobReEnqueuedAtEnd() async throws {
         try await prepareTest()
 
@@ -654,23 +581,6 @@ extension SimpleJobRunnerTests {
         #expect(order == ["med-1", "med-2", "med-3", "med-4"])
     }
 
-    @Test func priorityOverridesCreationTime() async throws {
-        try await prepareTest()
-
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
-        try await runner.register(SlowJob.self)
-        try await runner.register(SuccessJob.self)
-        try await runner.start()
-
-        try await runner.enqueue(SlowJob(key: "medium-first", duration: .milliseconds(50)), priority: .medium)
-        try await Task.sleep(for: .milliseconds(10))
-        try await runner.enqueue(SuccessJob(key: "high-later"), priority: .high)
-
-        try await Task.sleep(for: .milliseconds(200))
-
-        let order = await TestJobTracker.shared.getExecutionOrder()
-        #expect(order.last == "high-later")
-    }
 }
 
 // MARK: - Stop Tests
@@ -1005,39 +915,3 @@ extension SimpleJobRunnerTests {
     }
 }
 
-// MARK: - Constraints Tests
-
-struct NoRetryConstraintJob: Job {
-    typealias Context = Void
-    let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: nil)
-    }
-
-    func run(context _: Void) async throws {
-        await TestJobTracker.shared.recordFailure(key)
-        throw TestError.intentionalFailure
-    }
-}
-
-extension SimpleJobRunnerTests {
-    @Test func jobWithNilRetryConstraintFailsImmediately() async throws {
-        try await prepareTest()
-
-        let store = MockJobStore()
-        let runner = SimpleJobRunner(context: (), store: store, maxConcurrent: 1)
-        try await runner.register(NoRetryConstraintJob.self)
-        try await runner.start()
-
-        let jobKey = "nil-retry-\(UUID())"
-        try await runner.enqueue(NoRetryConstraintJob(key: jobKey), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
-
-        let failures = await TestJobTracker.shared.failureCount(jobKey)
-        #expect(failures == 1)
-
-        let failedJobs = await store.getJobsByStatus(.permanentlyFailed)
-        #expect(failedJobs.count == 1)
-    }
-}

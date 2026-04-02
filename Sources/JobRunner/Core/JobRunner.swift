@@ -139,7 +139,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         try await store.save(serialized)
 
-        await delegate?.jobEnqueued(JobEnqueuedEvent(
+        delegate?.jobEnqueued(JobEnqueuedEvent(
             id: serialized.id,
             jobType: J.self,
             priority: priority,
@@ -234,7 +234,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             let job = try registry.decode(serialized)
             let jobType = type(of: job) as Any.Type
 
-            await delegate?.jobStarted(JobStartedEvent(
+            delegate?.jobStarted(JobStartedEvent(
                 id: serialized.id,
                 jobType: jobType,
                 attempt: serialized.attempts + 1,
@@ -254,7 +254,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
             try? await store.delete(id: serialized.id)
             await jobStateDidChange()
-            await delegate?.jobCompleted(completedEvent)
+            delegate?.jobCompleted(completedEvent)
 
         } catch {
             await jobFailed(serialized, error: error)
@@ -281,7 +281,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             try? await store.save(updated)
 
             await jobStateDidChange()
-            await delegate?.jobFailed(JobFailedEvent(
+            delegate?.jobFailed(JobFailedEvent(
                 id: serialized.id,
                 jobType: jobType,
                 errorType: errorType,
@@ -299,7 +299,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             try? await store.save(updated)
 
             await jobStateDidChange()
-            await delegate?.jobFailed(JobFailedEvent(
+            delegate?.jobFailed(JobFailedEvent(
                 id: serialized.id,
                 jobType: jobType,
                 errorType: errorType,
@@ -331,7 +331,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         try? await store.save(updated)
 
         await jobStateDidChange()
-        await delegate?.jobFailed(JobFailedEvent(
+        delegate?.jobFailed(JobFailedEvent(
             id: serialized.id,
             jobType: jobType,
             errorType: errorType,
