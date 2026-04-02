@@ -1,5 +1,5 @@
 //
-//  JobEventHandlerTests.swift
+//  JobRunnerDelegateTests.swift
 //  job-runnerTests
 //
 //  Created by Henry on 4/1/26.
@@ -9,9 +9,9 @@ import Foundation
 @testable import JobRunner
 import Testing
 
-// MARK: - Test Event Handler
+// MARK: - Test Delegate
 
-actor RecordingEventHandler: JobEventHandler {
+actor RecordingDelegate: JobRunnerDelegate {
     var enqueued: [JobEnqueuedEvent] = []
     var started: [JobStartedEvent] = []
     var completed: [JobCompletedEvent] = []
@@ -86,12 +86,13 @@ private struct EventNoRetryFailJob: Job {
 // MARK: - Tests
 
 @Suite(.serialized)
-struct JobEventHandlerTests {
+struct JobRunnerDelegateTests {
     @Test func enqueuedEventFires() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventTestJob.self)
         try await runner.start()
 
@@ -108,8 +109,9 @@ struct JobEventHandlerTests {
     @Test func startedEventFires() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventTestJob.self)
         try await runner.start()
 
@@ -125,8 +127,9 @@ struct JobEventHandlerTests {
     @Test func completedEventFires() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventTestJob.self)
         try await runner.start()
 
@@ -142,8 +145,9 @@ struct JobEventHandlerTests {
     @Test func failedEventWithRetry() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventFailingJob.self)
         try await runner.start()
 
@@ -156,6 +160,8 @@ struct JobEventHandlerTests {
         // First two attempts should indicate willRetry
         #expect(events[0].willRetry == true)
         #expect(events[0].attempt == 1)
+        #expect(!events[0].errorType.isEmpty)
+        #expect(!events[0].errorDescription.isEmpty)
         #expect(events[1].willRetry == true)
         #expect(events[1].attempt == 2)
 
@@ -167,8 +173,9 @@ struct JobEventHandlerTests {
     @Test func failedEventPermanentFailure() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventPermanentFailJob.self)
         try await runner.start()
 
@@ -185,8 +192,9 @@ struct JobEventHandlerTests {
     @Test func failedEventNoRetryConstraint() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventNoRetryFailJob.self)
         try await runner.start()
 
@@ -201,8 +209,9 @@ struct JobEventHandlerTests {
     @Test func jobDataContainsEncodedProperties() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventTestJob.self)
         try await runner.start()
 
@@ -231,8 +240,9 @@ struct JobEventHandlerTests {
     @Test func eventOrderIsCorrect() async throws {
         try await prepareTest()
 
-        let handler = RecordingEventHandler()
-        let runner = SimpleJobRunner(context: (), maxConcurrent: 1, eventHandler: handler)
+        let handler = RecordingDelegate()
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        await runner.setDelegate(handler)
         try await runner.register(EventTestJob.self)
         try await runner.start()
 

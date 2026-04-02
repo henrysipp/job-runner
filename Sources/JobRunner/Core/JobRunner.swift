@@ -12,7 +12,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private let store: JobStore
     private let registry: JobRegistry<Context>
     private let concurrencyPolicy: ConcurrencyPolicy
-    private let eventHandler: (any JobEventHandler)?
+    private var delegate: (any JobRunnerDelegate)?
 
     private var isRunning = false
     private var isProcessing = false
@@ -22,18 +22,20 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     public init(
         context: Context,
         store: JobStore = InMemoryJobStore(),
-        concurrencyPolicy: ConcurrencyPolicy = FixedConcurrencyPolicy(limit: 3),
-        eventHandler: (any JobEventHandler)? = nil
+        concurrencyPolicy: ConcurrencyPolicy = FixedConcurrencyPolicy(limit: 3)
     ) {
         self.context = context
         self.store = store
         registry = JobRegistry()
         self.concurrencyPolicy = concurrencyPolicy
-        self.eventHandler = eventHandler
     }
 
-    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int, eventHandler: (any JobEventHandler)? = nil) {
-        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent), eventHandler: eventHandler)
+    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int) {
+        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent))
+    }
+
+    public func setDelegate(_ delegate: (any JobRunnerDelegate)?) {
+        self.delegate = delegate
     }
 
     public var statusStream: AsyncStream<QueueStatus> {
@@ -137,7 +139,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         try await store.save(serialized)
 
-        await eventHandler?.jobEnqueued(JobEnqueuedEvent(
+        await delegate?.jobEnqueued(JobEnqueuedEvent(
             id: serialized.id,
             jobType: J.self,
             priority: priority,
@@ -232,7 +234,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             let job = try registry.decode(serialized)
             let jobType = type(of: job) as Any.Type
 
-            await eventHandler?.jobStarted(JobStartedEvent(
+            await delegate?.jobStarted(JobStartedEvent(
                 id: serialized.id,
                 jobType: jobType,
                 attempt: serialized.attempts + 1,
@@ -243,23 +245,23 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             let start = clock.now
             try await job.run(context: context)
             let duration = clock.now - start
-
-            await eventHandler?.jobCompleted(JobCompletedEvent(
+            let completedEvent = JobCompletedEvent(
                 id: serialized.id,
                 jobType: jobType,
                 duration: duration,
                 jobData: jobDataString
-            ))
+            )
 
             try? await store.delete(id: serialized.id)
-            await jobCompleted()
+            await jobStateDidChange()
+            await delegate?.jobCompleted(completedEvent)
 
         } catch {
             await jobFailed(serialized, error: error)
         }
     }
 
-    private func jobCompleted() async {
+    private func jobStateDidChange() async {
         await emitStatus()
         Task { await processQueue() }
     }
@@ -270,25 +272,25 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         updated.lastAttemptedAt = Date.now
 
         let jobType = registry.resolveType(serialized.typeName) ?? Never.self as Any.Type
-        let sendableError = error as any Error & Sendable
         let jobDataString = String(data: serialized.jobData, encoding: .utf8) ?? ""
+        let errorType = String(reflecting: type(of: error))
+        let errorDescription = String(describing: error)
 
         if case .permanent(_)? = error as? JobFailure {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
 
-            await eventHandler?.jobFailed(JobFailedEvent(
+            await jobStateDidChange()
+            await delegate?.jobFailed(JobFailedEvent(
                 id: serialized.id,
                 jobType: jobType,
-                error: sendableError,
+                errorType: errorType,
+                errorDescription: errorDescription,
                 attempt: updated.attempts,
                 willRetry: false,
                 nextRetryAt: nil,
                 jobData: jobDataString
             ))
-
-            await emitStatus()
-            Task { await processQueue() }
             return
         }
 
@@ -296,18 +298,17 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             updated.status = .permanentlyFailed
             try? await store.save(updated)
 
-            await eventHandler?.jobFailed(JobFailedEvent(
+            await jobStateDidChange()
+            await delegate?.jobFailed(JobFailedEvent(
                 id: serialized.id,
                 jobType: jobType,
-                error: sendableError,
+                errorType: errorType,
+                errorDescription: errorDescription,
                 attempt: updated.attempts,
                 willRetry: false,
                 nextRetryAt: nil,
                 jobData: jobDataString
             ))
-
-            await emitStatus()
-            Task { await processQueue() }
             return
         }
 
@@ -329,18 +330,17 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         try? await store.save(updated)
 
-        await eventHandler?.jobFailed(JobFailedEvent(
+        await jobStateDidChange()
+        await delegate?.jobFailed(JobFailedEvent(
             id: serialized.id,
             jobType: jobType,
-            error: sendableError,
+            errorType: errorType,
+            errorDescription: errorDescription,
             attempt: updated.attempts,
             willRetry: willRetry,
             nextRetryAt: nextRetryAt,
             jobData: jobDataString
         ))
-
-        await emitStatus()
-        Task { await processQueue() }
     }
 
     private func sortedByPriority(_ jobs: [SerializedJob]) -> [SerializedJob] {
