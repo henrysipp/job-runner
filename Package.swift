@@ -19,9 +19,15 @@ let package = Package(
             targets: ["JobRunnerExamples"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/pointfreeco/swift-clocks", from: "1.0.0"),
+    ],
     targets: [
         .target(
             name: "JobRunner",
+            dependencies: [
+                .product(name: "Clocks", package: "swift-clocks"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]
@@ -35,7 +41,10 @@ let package = Package(
         ),
         .testTarget(
             name: "JobRunnerTests",
-            dependencies: ["JobRunner"],
+            dependencies: [
+                "JobRunner",
+                .product(name: "Clocks", package: "swift-clocks"),
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),
             ]

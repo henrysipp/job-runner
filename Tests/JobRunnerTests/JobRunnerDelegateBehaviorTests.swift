@@ -36,7 +36,8 @@ struct JobRunnerDelegateBehaviorTests {
         try await runner.start()
 
         try await runner.enqueue(NonSendableErrorJob(key: "non-sendable"))
-        try await Task.sleep(for: .milliseconds(200))
+        await delegate.waitForFailedCount(1)
+        await waitUntilIdle(runner)
 
         let events = delegate.failed
         let status = await runner.currentStatus()

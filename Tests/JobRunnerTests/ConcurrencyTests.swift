@@ -90,8 +90,12 @@ struct ConcurrencyTests {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 
-        // Wait for jobs to arrive at barrier
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 2 {
+                break
+            }
+            await Task.yield()
+        }
 
         // Only 2 should be running (waiting at barrier)
         let arrived = await barrier.getArrivedCount()
@@ -99,7 +103,12 @@ struct ConcurrencyTests {
 
         // Release them and let next batch run
         await barrier.releaseAll()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 4 {
+                break
+            }
+            await Task.yield()
+        }
 
         // Now 2 more should have arrived
         let arrivedAfter = await barrier.getArrivedCount()
@@ -120,8 +129,12 @@ struct ConcurrencyTests {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 
-        // Wait for first batch to arrive
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 3 {
+                break
+            }
+            await Task.yield()
+        }
         let firstBatch = await barrier.getArrivedCount()
         #expect(firstBatch == 3)
 
@@ -131,7 +144,12 @@ struct ConcurrencyTests {
         // Release first batch
         await barrier.releaseAll()
         await barrier.reset()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 1 {
+                break
+            }
+            await Task.yield()
+        }
 
         // Only 1 should start now
         let secondBatch = await barrier.getArrivedCount()
@@ -139,7 +157,12 @@ struct ConcurrencyTests {
 
         // Clean up
         await barrier.releaseAll()
-        try await Task.sleep(for: .milliseconds(100))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() >= 3 {
+                break
+            }
+            await Task.yield()
+        }
         await barrier.releaseAll()
     }
 
@@ -155,8 +178,12 @@ struct ConcurrencyTests {
             try await runner.enqueue(BarrierJob(key: "job-\(i)"), priority: .medium)
         }
 
-        // Wait for first job to arrive
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 1 {
+                break
+            }
+            await Task.yield()
+        }
         let firstBatch = await barrier.getArrivedCount()
         #expect(firstBatch == 1)
 
@@ -166,7 +193,12 @@ struct ConcurrencyTests {
         // Release first job
         await barrier.releaseAll()
         await barrier.reset()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 3 {
+                break
+            }
+            await Task.yield()
+        }
 
         // Now 3 should start
         let secondBatch = await barrier.getArrivedCount()
@@ -184,7 +216,9 @@ struct ConcurrencyTests {
 
         try await runner.enqueue(BarrierJob(key: "blocked"), priority: .medium)
 
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
 
         let arrived = await barrier.getArrivedCount()
         #expect(arrived == 0)
@@ -194,13 +228,23 @@ struct ConcurrencyTests {
         // Need to trigger processQueue - enqueue another
         try await runner.enqueue(BarrierJob(key: "trigger"), priority: .medium)
 
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 1 {
+                break
+            }
+            await Task.yield()
+        }
 
         let arrivedAfter = await barrier.getArrivedCount()
         #expect(arrivedAfter == 1)
 
         await barrier.releaseAll()
-        try await Task.sleep(for: .milliseconds(50))
+        for _ in 0 ..< 100 {
+            if await barrier.getArrivedCount() == 2 {
+                break
+            }
+            await Task.yield()
+        }
         await barrier.releaseAll()
     }
 }

@@ -30,8 +30,16 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         self.concurrencyPolicy = concurrencyPolicy
     }
 
-    public init(context: Context, store: JobStore = InMemoryJobStore(), maxConcurrent: Int) {
-        self.init(context: context, store: store, concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent))
+    public init(
+        context: Context,
+        store: JobStore = InMemoryJobStore(),
+        maxConcurrent: Int
+    ) {
+        self.init(
+            context: context,
+            store: store,
+            concurrencyPolicy: FixedConcurrencyPolicy(limit: maxConcurrent)
+        )
     }
 
     public func setDelegate(_ delegate: (any JobRunnerDelegate)?) {
@@ -117,7 +125,8 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         }
     }
 
-    public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws where J.Context == Context {
+    @discardableResult
+    public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws -> UUID where J.Context == Context {
         guard isRunning else {
             throw JobError.notStarted
         }
@@ -149,6 +158,8 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         await emitStatus()
 
         Task { await processQueue() }
+
+        return serialized.id
     }
 
     private func processQueue() async {

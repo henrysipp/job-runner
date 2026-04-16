@@ -12,5 +12,6 @@ public protocol JobRunnerProtocol<Context>: Actor {
     func register<J: Job>(_ type: J.Type) async throws where J.Context == Context
     func start() async throws
     func stop() async
-    func enqueue<J: Job>(_ job: J, priority: Priority) async throws where J.Context == Context
+    @discardableResult
+    func enqueue<J: Job>(_ job: J, priority: Priority) async throws -> UUID where J.Context == Context
 }

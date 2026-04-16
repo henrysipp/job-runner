@@ -17,6 +17,10 @@ final class RecordingDelegate: JobRunnerDelegate, @unchecked Sendable {
     private var _started: [JobStartedEvent] = []
     private var _completed: [JobCompletedEvent] = []
     private var _failed: [JobFailedEvent] = []
+    private var enqueuedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var startedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var completedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var failedWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     var enqueued: [JobEnqueuedEvent] { lock.withLock { _enqueued } }
     var started: [JobStartedEvent] { lock.withLock { _started } }
@@ -24,19 +28,31 @@ final class RecordingDelegate: JobRunnerDelegate, @unchecked Sendable {
     var failed: [JobFailedEvent] { lock.withLock { _failed } }
 
     func jobEnqueued(_ event: JobEnqueuedEvent) {
-        lock.withLock { _enqueued.append(event) }
+        lock.withLock {
+            _enqueued.append(event)
+            resumeSatisfiedWaiters(&enqueuedWaiters, currentCount: _enqueued.count)
+        }
     }
 
     func jobStarted(_ event: JobStartedEvent) {
-        lock.withLock { _started.append(event) }
+        lock.withLock {
+            _started.append(event)
+            resumeSatisfiedWaiters(&startedWaiters, currentCount: _started.count)
+        }
     }
 
     func jobCompleted(_ event: JobCompletedEvent) {
-        lock.withLock { _completed.append(event) }
+        lock.withLock {
+            _completed.append(event)
+            resumeSatisfiedWaiters(&completedWaiters, currentCount: _completed.count)
+        }
     }
 
     func jobFailed(_ event: JobFailedEvent) {
-        lock.withLock { _failed.append(event) }
+        lock.withLock {
+            _failed.append(event)
+            resumeSatisfiedWaiters(&failedWaiters, currentCount: _failed.count)
+        }
     }
 
     func reset() {
@@ -46,6 +62,74 @@ final class RecordingDelegate: JobRunnerDelegate, @unchecked Sendable {
             _completed.removeAll()
             _failed.removeAll()
         }
+    }
+
+    func waitForEnqueuedCount(_ count: Int) async {
+        await waitForCount(
+            count,
+            currentCount: { _enqueued.count },
+            waiters: \.enqueuedWaiters
+        )
+    }
+
+    func waitForStartedCount(_ count: Int) async {
+        await waitForCount(
+            count,
+            currentCount: { _started.count },
+            waiters: \.startedWaiters
+        )
+    }
+
+    func waitForCompletedCount(_ count: Int) async {
+        await waitForCount(
+            count,
+            currentCount: { _completed.count },
+            waiters: \.completedWaiters
+        )
+    }
+
+    func waitForFailedCount(_ count: Int) async {
+        await waitForCount(
+            count,
+            currentCount: { _failed.count },
+            waiters: \.failedWaiters
+        )
+    }
+
+    private func waitForCount(
+        _ count: Int,
+        currentCount: () -> Int,
+        waiters: ReferenceWritableKeyPath<RecordingDelegate, [(Int, CheckedContinuation<Void, Never>)]>
+    ) async {
+        let shouldWait = lock.withLock { currentCount() < count }
+        guard shouldWait else { return }
+
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                if currentCount() >= count {
+                    continuation.resume()
+                } else {
+                    self[keyPath: waiters].append((count, continuation))
+                }
+            }
+        }
+    }
+
+    private func resumeSatisfiedWaiters(
+        _ waiters: inout [(Int, CheckedContinuation<Void, Never>)],
+        currentCount: Int
+    ) {
+        var remaining: [(Int, CheckedContinuation<Void, Never>)] = []
+
+        for (targetCount, continuation) in waiters {
+            if currentCount >= targetCount {
+                continuation.resume()
+            } else {
+                remaining.append((targetCount, continuation))
+            }
+        }
+
+        waiters = remaining
     }
 }
 
@@ -105,7 +189,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "enqueue-test"), priority: .high)
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForEnqueuedCount(1)
 
         let events = handler.enqueued
         #expect(events.count == 1)
@@ -124,7 +208,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "start-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForStartedCount(1)
 
         let events = handler.started
         #expect(events.count == 1)
@@ -142,7 +226,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "complete-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForCompletedCount(1)
 
         let events = handler.completed
         #expect(events.count == 1)
@@ -160,7 +244,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventFailingJob(key: "retry-test"))
-        try await Task.sleep(for: .milliseconds(500))
+        await handler.waitForFailedCount(3)
 
         let events = handler.failed
         #expect(events.count == 3)
@@ -188,7 +272,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventPermanentFailJob(key: "permanent-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForFailedCount(1)
 
         let events = handler.failed
         #expect(events.count == 1)
@@ -207,7 +291,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventNoRetryFailJob(key: "no-retry-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForFailedCount(1)
 
         let events = handler.failed
         #expect(events.count == 1)
@@ -224,7 +308,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "json-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForEnqueuedCount(1)
 
         let event = handler.enqueued.first
         #expect(event != nil)
@@ -239,7 +323,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "no-handler"))
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntilIdle(runner)
 
         let status = await runner.currentStatus()
         #expect(status.isIdle)
@@ -255,7 +339,7 @@ struct JobRunnerDelegateTests {
         try await runner.start()
 
         try await runner.enqueue(EventTestJob(key: "order-test"))
-        try await Task.sleep(for: .milliseconds(200))
+        await handler.waitForCompletedCount(1)
 
         let enqueuedCount = handler.enqueued.count
         let startedCount = handler.started.count

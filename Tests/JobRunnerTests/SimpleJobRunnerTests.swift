@@ -189,8 +189,7 @@ extension SimpleJobRunnerTests {
         let jobKey = "test-job-\(UUID())"
         let job = SuccessJob(key: jobKey)
         try await runner.enqueue(job, priority: .high)
-
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntilIdle(runner)
 
         let didExecute = await TestJobTracker.shared.didExecute(jobKey)
         #expect(didExecute)
@@ -206,8 +205,7 @@ extension SimpleJobRunnerTests {
         let jobKey = "failing-job-\(UUID())"
         let job = FailingJob(key: jobKey)
         try await runner.enqueue(job, priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(500))
+        await waitUntilIdle(runner)
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
         #expect(failures == 3)
@@ -236,7 +234,6 @@ extension SimpleJobRunnerTests {
         let maxConcurrent = await TestJobTracker.shared.getMaxConcurrent()
         #expect(maxConcurrent <= 2)
 
-        // Wait for all jobs to complete before test ends
         try await Task.sleep(for: .milliseconds(200))
     }
 
@@ -250,8 +247,7 @@ extension SimpleJobRunnerTests {
         try await runner.enqueue(SuccessJob(key: "job-1"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "job-2"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "job-3"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntilIdle(runner)
 
         let order = await TestJobTracker.shared.getExecutionOrder()
         #expect(order == ["job-1", "job-2", "job-3"])
@@ -267,13 +263,11 @@ extension SimpleJobRunnerTests {
 
         try await runner.enqueue(SlowJob(key: "status-test", duration: .milliseconds(500)), priority: .high)
 
-        // Job takes 500ms, check at 100ms that it's running
         try await Task.sleep(for: .milliseconds(100))
 
         let runningJobs = await store.getJobsByStatus(.running)
         #expect(!runningJobs.isEmpty)
 
-        // Wait for job to complete (500ms + overhead for async deletion)
         try await Task.sleep(for: .milliseconds(500))
 
         let deletedCount = await store.deletedJobIds.count
@@ -310,8 +304,7 @@ extension SimpleJobRunnerTests {
 
         try await runner.enqueue(SuccessJob(key: "success-1"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "success-2"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntilIdle(runner)
 
         let executed1 = await TestJobTracker.shared.didExecute("success-1")
         let executed2 = await TestJobTracker.shared.didExecute("success-2")
@@ -332,7 +325,7 @@ extension SimpleJobRunnerTests {
 
         // Should still work normally
         try await runner.enqueue(SuccessJob(key: "idempotent-test"), priority: .medium)
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntilIdle(runner)
 
         let executed = await TestJobTracker.shared.didExecute("idempotent-test")
         #expect(executed)
@@ -391,8 +384,7 @@ extension SimpleJobRunnerTests {
 
         // Start should load pending and running jobs, but not failed
         try await runner.start()
-
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntilIdle(runner)
 
         let executedPending = await TestJobTracker.shared.didExecute("persisted-pending")
         let executedRunning = await TestJobTracker.shared.didExecute("persisted-running")
@@ -435,9 +427,7 @@ extension SimpleJobRunnerTests {
 
         try await store2.save(unknownJob)
         try await runner2.start()
-
-        // Give time for the job to fail
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntilIdle(runner2)
 
         // Job should have failed and been marked as permanently failed (hit max attempts)
         let failedJobs = await store2.getJobsByStatus(.permanentlyFailed)
@@ -474,8 +464,7 @@ extension SimpleJobRunnerTests {
 
         let jobKey = "retry-5-times"
         try await runner.enqueue(FailingJobWithAttempts(key: jobKey, maxAttempts: 5), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(800))
+        await waitUntilIdle(runner)
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
         #expect(failures == 5)
@@ -490,8 +479,7 @@ extension SimpleJobRunnerTests {
         try await runner.start()
 
         try await runner.enqueue(FailingJobWithAttempts(key: "perm-fail", maxAttempts: 2), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(500))
+        await waitUntilIdle(runner)
 
         let failedJobs = await store.getJobsByStatus(.permanentlyFailed)
         #expect(failedJobs.count == 1)
@@ -508,8 +496,7 @@ extension SimpleJobRunnerTests {
         try await runner.enqueue(SuccessJob(key: "A"), priority: .medium)
         try await runner.enqueue(FailingJob(key: "B"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "C"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(800))
+        await waitUntilIdle(runner)
 
         let order = await TestJobTracker.shared.getExecutionOrder()
         let firstB = order.firstIndex(of: "B")
@@ -529,8 +516,7 @@ extension SimpleJobRunnerTests {
         try await runner.start()
 
         try await runner.enqueue(FailingJob(key: "attempts-test"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(600))
+        await waitUntilIdle(runner)
 
         let allJobs = await store.savedJobs
         let attempts = allJobs.map { $0.attempts }
@@ -548,13 +534,14 @@ extension SimpleJobRunnerTests {
 
         let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
         try await runner.register(SlowJob.self)
+        try await runner.register(SuccessJob.self)
         try await runner.start()
 
         // Enqueue jobs - first job starts immediately, rest queue by priority
         try await runner.enqueue(SlowJob(key: "low", duration: .milliseconds(50)), priority: .low)
-        try await runner.enqueue(SlowJob(key: "medium", duration: .milliseconds(50)), priority: .medium)
-        try await runner.enqueue(SlowJob(key: "high", duration: .milliseconds(50)), priority: .high)
-        try await runner.enqueue(SlowJob(key: "immediate", duration: .milliseconds(50)), priority: .immediate)
+        try await runner.enqueue(SuccessJob(key: "medium"), priority: .medium)
+        try await runner.enqueue(SuccessJob(key: "high"), priority: .high)
+        try await runner.enqueue(SuccessJob(key: "immediate"), priority: .immediate)
 
         try await Task.sleep(for: .milliseconds(600))
 
@@ -574,8 +561,7 @@ extension SimpleJobRunnerTests {
         try await runner.enqueue(SuccessJob(key: "med-2"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "med-3"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "med-4"), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(500))
+        await waitUntilIdle(runner)
 
         let order = await TestJobTracker.shared.getExecutionOrder()
         #expect(order == ["med-1", "med-2", "med-3", "med-4"])
@@ -600,11 +586,9 @@ extension SimpleJobRunnerTests {
         try await runner.enqueue(SuccessJob(key: "pending-job-1"), priority: .medium)
         try await runner.enqueue(SuccessJob(key: "pending-job-2"), priority: .medium)
 
-        // Wait for first job to start, then stop
         try await Task.sleep(for: .milliseconds(50))
         await runner.stop()
 
-        // Wait for the running job to complete
         try await Task.sleep(for: .milliseconds(300))
 
         // The running job should have completed, but pending jobs should not have started
@@ -680,8 +664,7 @@ extension SimpleJobRunnerTests {
 
         let jobKey = "no-retry-\(UUID())"
         try await runner.enqueue(NoRetryJob(key: jobKey), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntilIdle(runner)
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
         #expect(failures == 1)
@@ -700,8 +683,7 @@ extension SimpleJobRunnerTests {
 
         let jobKey = "retry-immediately-\(UUID())"
         try await runner.enqueue(FailingJob(key: jobKey), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(500))
+        await waitUntilIdle(runner)
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
         #expect(failures == 3)
@@ -721,7 +703,6 @@ extension SimpleJobRunnerTests {
         let jobKey = "exponential-\(UUID())"
         try await runner.enqueue(ExponentialBackoffJob(key: jobKey), priority: .medium)
 
-        // Wait for first attempt and check scheduledAt is set
         try await Task.sleep(for: .milliseconds(100))
 
         let pendingJobs = await store.getJobsByStatus(.pending)
@@ -729,7 +710,6 @@ extension SimpleJobRunnerTests {
             #expect(job.scheduledAt != nil)
         }
 
-        // Wait for all retries with backoff
         try await Task.sleep(for: .milliseconds(500))
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
@@ -747,7 +727,6 @@ extension SimpleJobRunnerTests {
         let jobKey = "linear-\(UUID())"
         try await runner.enqueue(LinearBackoffJob(key: jobKey), priority: .medium)
 
-        // Wait for first attempt and check scheduledAt is set
         try await Task.sleep(for: .milliseconds(100))
 
         let pendingJobs = await store.getJobsByStatus(.pending)
@@ -755,7 +734,6 @@ extension SimpleJobRunnerTests {
             #expect(job.scheduledAt != nil)
         }
 
-        // Wait for all retries with backoff
         try await Task.sleep(for: .milliseconds(500))
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
@@ -773,7 +751,6 @@ extension SimpleJobRunnerTests {
         let jobKey = "fixed-\(UUID())"
         try await runner.enqueue(FixedBackoffJob(key: jobKey), priority: .medium)
 
-        // Wait for first attempt and check scheduledAt is set
         try await Task.sleep(for: .milliseconds(100))
 
         let pendingJobs = await store.getJobsByStatus(.pending)
@@ -781,7 +758,6 @@ extension SimpleJobRunnerTests {
             #expect(job.scheduledAt != nil)
         }
 
-        // Wait for all retries with backoff
         try await Task.sleep(for: .milliseconds(500))
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
@@ -794,7 +770,6 @@ extension SimpleJobRunnerTests {
         let store = MockJobStore()
         let runner = SimpleJobRunner(context: (), store: store, maxConcurrent: 1)
         try await runner.register(SuccessJob.self)
-        try await runner.start()
 
         // Manually create a job scheduled for the future
         let futureJob = try SerializedJob(
@@ -811,8 +786,8 @@ extension SimpleJobRunnerTests {
         )
 
         try await store.save(futureJob)
+        try await runner.start()
 
-        // Give time for processQueue to run
         try await Task.sleep(for: .milliseconds(200))
 
         // Job should still be pending since scheduledAt is in the future
@@ -836,14 +811,12 @@ extension SimpleJobRunnerTests {
         let jobKey = "scheduled-job-\(UUID())"
         try await runner.enqueue(FixedBackoffJob(key: jobKey), priority: .medium)
 
-        // Wait for first attempt to fail and job to be scheduled
         try await Task.sleep(for: .milliseconds(100))
 
         // Verify it's pending with a scheduledAt
         let pendingJobs = await store.getJobsByStatus(.pending)
         #expect(pendingJobs.first?.scheduledAt != nil)
 
-        // Wait for the scheduled time to pass (50ms backoff + buffer)
         try await Task.sleep(for: .milliseconds(200))
 
         // Job should have been retried (2 failures total)
@@ -861,8 +834,7 @@ extension SimpleJobRunnerTests {
 
         let jobKey = "max-attempts-\(UUID())"
         try await runner.enqueue(FailingJobWithAttempts(key: jobKey, maxAttempts: 2), priority: .medium)
-
-        try await Task.sleep(for: .milliseconds(500))
+        await waitUntilIdle(runner)
 
         let failures = await TestJobTracker.shared.failureCount(jobKey)
         #expect(failures == 2)
@@ -906,7 +878,7 @@ extension SimpleJobRunnerTests {
         try await runner.start()
 
         try await runner.enqueue(NoRetryJob(key: "fail-status-test"), priority: .medium)
-        try await Task.sleep(for: .milliseconds(300))
+        await waitUntilIdle(runner)
 
         let status = await runner.currentStatus()
         #expect(status.failed == 1)
@@ -914,4 +886,3 @@ extension SimpleJobRunnerTests {
         #expect(status.running == 0)
     }
 }
-

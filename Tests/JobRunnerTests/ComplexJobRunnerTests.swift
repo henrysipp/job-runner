@@ -64,10 +64,14 @@ extension ComplexJobRunnerTests {
         try await runner.register(CounterJob.self)
         try await runner.start()
 
-        try await runner.enqueue(CounterJob(id: "first"), priority: .high)
-        try await runner.enqueue(CounterJob(id: "second"), priority: .medium)
+        let waiter = JobWaiter()
+        await runner.setDelegate(waiter)
 
-        try await Task.sleep(for: .milliseconds(300))
+        let firstId = try await runner.enqueue(CounterJob(id: "first"), priority: .high)
+        let secondId = try await runner.enqueue(CounterJob(id: "second"), priority: .medium)
+
+        try await waiter.wait(for: firstId)
+        try await waiter.wait(for: secondId)
 
         let messages = await counter.getMessages()
         #expect(messages.count == 2)
@@ -97,11 +101,16 @@ extension ComplexJobRunnerTests {
         try await runner1.start()
         try await runner2.start()
 
-        // Enqueue jobs to each runner
-        try await runner1.enqueue(CounterJob(id: "runner1-job"), priority: .medium)
-        try await runner2.enqueue(CounterJob(id: "runner2-job"), priority: .medium)
+        let waiter1 = JobWaiter()
+        let waiter2 = JobWaiter()
+        await runner1.setDelegate(waiter1)
+        await runner2.setDelegate(waiter2)
 
-        try await Task.sleep(for: .milliseconds(300))
+        let id1 = try await runner1.enqueue(CounterJob(id: "runner1-job"), priority: .medium)
+        let id2 = try await runner2.enqueue(CounterJob(id: "runner2-job"), priority: .medium)
+
+        try await waiter1.wait(for: id1)
+        try await waiter2.wait(for: id2)
 
         // Verify each runner used its own context
         let messages1 = await counter1.getMessages()

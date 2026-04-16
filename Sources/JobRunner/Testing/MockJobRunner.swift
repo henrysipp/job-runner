@@ -47,11 +47,13 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
         isStarted = false
     }
 
-    public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws where J.Context == Context {
+    @discardableResult
+    public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws -> UUID where J.Context == Context {
         if let error = shouldThrowOnEnqueue {
             throw error
         }
         enqueuedJobsInternal.append((job: job, priority: priority))
+        return UUID()
     }
 
     public func setErrorOnRegister(_ error: Error?) {

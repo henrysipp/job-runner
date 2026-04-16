@@ -6,7 +6,23 @@
 //
 
 import Foundation
+@testable import JobRunner
 
 func waitForBackgroundJobs() async throws {
-    try await Task.sleep(for: .milliseconds(100))
+    for _ in 0 ..< 50 {
+        await Task.yield()
+    }
+}
+
+func waitUntilIdle<Context: Sendable>(_ runner: JobRunner<Context>) async {
+    let statuses = await runner.statusStream
+    if await runner.currentStatus().isIdle {
+        return
+    }
+
+    for await status in statuses {
+        if status.isIdle {
+            break
+        }
+    }
 }
