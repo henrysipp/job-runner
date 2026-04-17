@@ -25,15 +25,23 @@ struct JobWaiterTests {
             priority: .medium
         )
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
+        let results = try await withThrowingTaskGroup(of: Result<Void, Error>.self) { group in
             group.addTask {
-                try await waiter.wait(for: id, timeout: .seconds(1))
+                await waiter.wait(for: id, timeout: .seconds(1))
             }
             group.addTask {
-                try await waiter.wait(for: id, timeout: .seconds(1))
+                await waiter.wait(for: id, timeout: .seconds(1))
             }
 
-            try await group.waitForAll()
+            var results: [Result<Void, Error>] = []
+            for try await result in group {
+                results.append(result)
+            }
+            return results
+        }
+
+        for result in results {
+            try result.get()
         }
 
         await waitUntilIdle(runner)
@@ -54,11 +62,36 @@ struct JobWaiterTests {
         let jobKey = "repeat-wait-\(UUID())"
         let id = try await runner.enqueue(SuccessJob(key: jobKey), priority: .medium)
 
-        try await waiter.wait(for: id, timeout: .seconds(1))
-        try await waiter.wait(for: id, timeout: .seconds(1))
+        try (await waiter.wait(for: id, timeout: .seconds(1))).get()
+        try (await waiter.wait(for: id, timeout: .seconds(1))).get()
 
         await waitUntilIdle(runner)
         let didExecute = await TestJobTracker.shared.didExecute(jobKey)
         #expect(didExecute)
+    }
+
+    @Test func failedJobReturnsFailureResult() async throws {
+        try await prepareTest()
+
+        let runner = SimpleJobRunner(context: (), maxConcurrent: 1)
+        let waiter = JobWaiter()
+
+        await runner.setDelegate(waiter)
+        try await runner.register(NoRetryJob.self)
+        try await runner.start()
+
+        let jobKey = "failed-result-\(UUID())"
+        let id = try await runner.enqueue(NoRetryJob(key: jobKey), priority: .medium)
+
+        let result = await waiter.wait(for: id, timeout: .seconds(1))
+
+        switch result {
+        case .success:
+            Issue.record("Expected failed job to return a failure result")
+        case .failure(let error):
+            let waiterError = try #require(error as? JobWaiterError)
+            #expect(waiterError.errorType.contains("TestError"))
+            #expect(waiterError.attempts == 1)
+        }
     }
 }

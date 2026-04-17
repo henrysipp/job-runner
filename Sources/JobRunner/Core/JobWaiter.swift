@@ -16,10 +16,10 @@ public struct JobWaiterTimeoutError: Error, Sendable {
     public let timeout: Duration
 }
 
-public actor JobWaiter: JobRunnerDelegate {
+public actor JobWaiter {
     private struct PendingWaiter {
         let id: UUID
-        let continuation: CheckedContinuation<Void, Error>
+        let continuation: CheckedContinuation<Result<Void, Error>, Never>
     }
 
     private var pending: [UUID: [PendingWaiter]] = [:]
@@ -27,10 +27,11 @@ public actor JobWaiter: JobRunnerDelegate {
 
     public init() {}
 
-    public func wait(for id: UUID, timeout: Duration = .seconds(5)) async throws {
+    // MARK: - Waiting
+
+    public func wait(for id: UUID, timeout: Duration = .seconds(5)) async -> Result<Void, Error> {
         if let result = finished[id] {
-            try result.get()
-            return
+            return result
         }
 
         let waiterID = UUID()
@@ -44,9 +45,9 @@ public actor JobWaiter: JobRunnerDelegate {
         }
         defer { timeoutTask.cancel() }
 
-        try await withCheckedThrowingContinuation { cont in
+        return await withCheckedContinuation { cont in
             if let result = finished[id] {
-                cont.resume(with: result)
+                cont.resume(returning: result)
                 return
             }
 
@@ -65,9 +66,22 @@ public actor JobWaiter: JobRunnerDelegate {
             pending[id] = waiters
         }
 
-        waiter.continuation.resume(throwing: JobWaiterTimeoutError(id: id, timeout: timeout))
+        waiter.continuation.resume(returning: .failure(JobWaiterTimeoutError(id: id, timeout: timeout)))
     }
 
+    private func record(id: UUID, result: Result<Void, Error>) {
+        finished[id] = result
+
+        guard let waiters = pending.removeValue(forKey: id) else { return }
+        for waiter in waiters {
+            waiter.continuation.resume(returning: result)
+        }
+    }
+}
+
+// MARK: - JobRunnerDelegate
+
+extension JobWaiter: JobRunnerDelegate {
     nonisolated public func jobCompleted(_ event: JobCompletedEvent) {
         let id = event.id
         Task { await self.record(id: id, result: .success(())) }
@@ -82,14 +96,5 @@ public actor JobWaiter: JobRunnerDelegate {
             attempts: event.attempt
         )
         Task { await self.record(id: id, result: .failure(error)) }
-    }
-
-    private func record(id: UUID, result: Result<Void, Error>) {
-        finished[id] = result
-
-        guard let waiters = pending.removeValue(forKey: id) else { return }
-        for waiter in waiters {
-            waiter.continuation.resume(with: result)
-        }
     }
 }
