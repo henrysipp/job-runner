@@ -11,15 +11,18 @@ public struct JobConstraints: Codable, Sendable, Equatable {
     public var retry: RetryConstraint?
     public var connectivity: ConnectivityConstraint?
     public var persistence: PersistenceConstraint
+    public var background: BackgroundConstraint
 
     public init(
         retry: RetryConstraint? = .default,
         connectivity: ConnectivityConstraint? = nil,
-        persistence: PersistenceConstraint = .ephemeral
+        persistence: PersistenceConstraint = .ephemeral,
+        background: BackgroundConstraint = .foregroundOnly
     ) {
         self.retry = retry
         self.connectivity = connectivity
         self.persistence = persistence
+        self.background = background
     }
 
     public static let `default` = JobConstraints()
@@ -30,6 +33,7 @@ public struct JobConstraints: Codable, Sendable, Equatable {
         case retry
         case connectivity
         case persistence
+        case background
     }
 
     public init(from decoder: Decoder) throws {
@@ -37,5 +41,9 @@ public struct JobConstraints: Codable, Sendable, Equatable {
         retry = try container.decodeIfPresent(RetryConstraint.self, forKey: .retry)
         connectivity = try container.decodeIfPresent(ConnectivityConstraint.self, forKey: .connectivity)
         persistence = try container.decodeIfPresent(PersistenceConstraint.self, forKey: .persistence) ?? .persisted
+        // `.foregroundOnly` is what a pre-`background` host effectively did, since it had no way to
+        // run anything while backgrounded. Jobs already on disk keep behaving the same.
+        background = try container
+            .decodeIfPresent(BackgroundConstraint.self, forKey: .background) ?? .foregroundOnly
     }
 }

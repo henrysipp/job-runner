@@ -12,6 +12,7 @@ public protocol JobRunnerDelegate: Sendable {
     func jobStarted(_ event: JobStartedEvent)
     func jobCompleted(_ event: JobCompletedEvent)
     func jobFailed(_ event: JobFailedEvent)
+    func jobInterrupted(_ event: JobInterruptedEvent)
 }
 
 extension JobRunnerDelegate {
@@ -19,4 +20,5 @@ extension JobRunnerDelegate {
     public func jobStarted(_ event: JobStartedEvent) {}
     public func jobCompleted(_ event: JobCompletedEvent) {}
     public func jobFailed(_ event: JobFailedEvent) {}
+    public func jobInterrupted(_ event: JobInterruptedEvent) {}
 }

@@ -26,3 +26,14 @@ func waitUntilIdle<Context: Sendable>(_ runner: JobRunner<Context>) async {
         }
     }
 }
+
+private enum AsyncTestError: Error { case timeout }
+
+func waitForCondition(_ condition: @escaping @Sendable () async -> Bool) async throws {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(3)
+    while !(await condition()) {
+        guard clock.now < deadline else { throw AsyncTestError.timeout }
+        try await Task.sleep(for: .milliseconds(5))
+    }
+}

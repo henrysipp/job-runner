@@ -13,5 +13,8 @@ public protocol JobRunnerProtocol<Context>: Actor {
     func start() async throws
     func stop() async
     @discardableResult
+    func shutdown(timeout: Duration?) async -> Bool
+    func setExecutionContext(_ context: ExecutionContext) async
+    @discardableResult
     func enqueue<J: Job>(_ job: J, priority: Priority) async throws -> UUID where J.Context == Context
 }
