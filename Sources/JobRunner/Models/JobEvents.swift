@@ -34,6 +34,7 @@ public struct JobFailedEvent: Sendable {
     public let jobType: Any.Type
     public let errorType: String
     public let errorDescription: String
+    public let error: any Error
     public let attempt: Int
     public let willRetry: Bool
     public let nextRetryAt: Date?

@@ -527,7 +527,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let jobDataString = String(data: serialized.jobData, encoding: .utf8) ?? ""
         let errorType = String(reflecting: type(of: error))
         let errorDescription = String(describing: error)
-        let rollbackError = (error as? JobFailure)?.underlyingError ?? error
+        let underlyingError = (error as? JobFailure)?.underlyingError ?? error
 
         let isPermanent: Bool
         if case .permanent(_)? = error as? JobFailure {
@@ -546,7 +546,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             }
         } else {
             updated.status = .permanentlyFailed
-            await job?.rollback(context: context, error: rollbackError)
+            await job?.rollback(context: context, error: underlyingError)
         }
 
         try? await store.save(updated)
@@ -558,6 +558,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             jobType: jobType,
             errorType: errorType,
             errorDescription: errorDescription,
+            error: underlyingError,
             attempt: updated.attempts,
             willRetry: willRetry,
             nextRetryAt: updated.scheduledAt,
