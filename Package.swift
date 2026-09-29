@@ -7,7 +7,7 @@ let package = Package(
     name: "JobRunner",
     platforms: [
         .macOS(.v13),
-        .iOS(.v16),
+        .iOS("26.0"),
     ],
     products: [
         .library(

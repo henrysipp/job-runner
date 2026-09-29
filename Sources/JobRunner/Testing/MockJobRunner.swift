@@ -7,13 +7,15 @@
 
 import Foundation
 
-public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
+public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol, BackgroundContinuationRunning {
     public let context: Context
     public private(set) var delegate: (any JobRunnerDelegate)?
     public var registeredTypes: [String] = []
     private var enqueuedJobsInternal: [(job: Any, priority: Priority)] = []
     public var startCallCount: Int = 0
     public var isStarted: Bool = false
+    public var shutdownCallCount: Int = 0
+    public private(set) var executionContext: ExecutionContext = .foreground
 
     private var shouldThrowOnRegister: Error?
     private var shouldThrowOnStart: Error?
@@ -48,6 +50,27 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
     }
 
     @discardableResult
+    public func shutdown(timeout _: Duration? = .seconds(5)) async -> Bool {
+        isStarted = false
+        shutdownCallCount += 1
+        return true
+    }
+
+    public func setExecutionContext(_ newValue: ExecutionContext) async {
+        executionContext = newValue
+    }
+
+    public var backgroundWorkSnapshot: BackgroundWorkSnapshot = .empty
+
+    public func beginBackgroundContinuation() {}
+
+    public func endBackgroundContinuation() {}
+
+    public func backgroundWorkRemaining() async -> BackgroundWorkSnapshot {
+        backgroundWorkSnapshot
+    }
+
+    @discardableResult
     public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws -> UUID where J.Context == Context {
         if let error = shouldThrowOnEnqueue {
             throw error
@@ -73,6 +96,9 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol {
         enqueuedJobsInternal.removeAll()
         startCallCount = 0
         isStarted = false
+        shutdownCallCount = 0
+        executionContext = .foreground
+        backgroundWorkSnapshot = .empty
         shouldThrowOnRegister = nil
         shouldThrowOnStart = nil
         shouldThrowOnEnqueue = nil
