@@ -254,6 +254,7 @@ struct JobRunnerDelegateTests {
         #expect(events[0].attempt == 1)
         #expect(!events[0].errorType.isEmpty)
         #expect(!events[0].errorDescription.isEmpty)
+        #expect(events[0].error as? TestError == .intentionalFailure)
         #expect(events[1].willRetry == true)
         #expect(events[1].attempt == 2)
 
@@ -279,6 +280,7 @@ struct JobRunnerDelegateTests {
         #expect(events[0].willRetry == false)
         #expect(events[0].attempt == 1)
         #expect(events[0].jobType is EventPermanentFailJob.Type)
+        #expect(events[0].error as? TestError == .intentionalFailure)
     }
 
     @Test func failedEventNoRetryConstraint() async throws {
