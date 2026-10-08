@@ -22,8 +22,8 @@ import os
 /// logged and skipped so one bad payload does not take down the whole queue. Construction
 /// time scales linearly with queue size — for very large queues, consider a different store.
 ///
-/// **Persistence constraint**
-/// Jobs whose `constraints.persistence` is `.ephemeral` are kept in the in-memory mirror but
+/// **Persistence**
+/// Jobs whose `traits.persistence` is `.ephemeral` are kept in the in-memory mirror but
 /// never written to disk. They vanish on process restart — appropriate for queries and other
 /// idempotent work that need not survive relaunch.
 public actor FileSystemJobStore: JobStore {
@@ -58,7 +58,7 @@ public actor FileSystemJobStore: JobStore {
 
     public func save(_ job: SerializedJob) async throws {
         jobs[job.id] = job
-        guard job.constraints.persistence == .persisted else { return }
+        guard job.traits.persistence == .persisted else { return }
         try ensureDirectoryExists()
         let data = try encoder.encode(job)
         try data.write(to: fileURL(for: job.id), options: .atomic)

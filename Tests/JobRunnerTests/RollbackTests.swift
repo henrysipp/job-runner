@@ -42,8 +42,8 @@ private struct PermanentFailureJob: Job {
     typealias Context = RollbackRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .init(maxAttempts: 3, strategy: .fixed(delay: 600)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .fixed(delay: 600))]
     }
 
     func run(context: RollbackRecorder) async throws {
@@ -61,8 +61,8 @@ private struct TransientFailureJob: Job {
     let key: String
     let maxAttempts: Int
 
-    var constraints: JobConstraints {
-        .init(retry: .init(maxAttempts: maxAttempts, strategy: .fixed(delay: 600)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: maxAttempts, strategy: .fixed(delay: 600))]
     }
 
     func run(context: RollbackRecorder) async throws {
@@ -75,13 +75,28 @@ private struct TransientFailureJob: Job {
     }
 }
 
-private struct NoRetryConstraintJob: Job {
+private struct NoRetryPolicyJob: Job {
     typealias Context = RollbackRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: nil)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry]
     }
+
+    func run(context: RollbackRecorder) async throws {
+        await context.didRun(key)
+        throw RollbackTestError()
+    }
+
+    func rollback(context: RollbackRecorder, error: any Error) async {
+        await context.didRollBack(key, error: error)
+    }
+}
+
+/// Declares no traits at all, so it gets the implicit policies.
+private struct BareFailingJob: Job {
+    typealias Context = RollbackRecorder
+    let key: String
 
     func run(context: RollbackRecorder) async throws {
         await context.didRun(key)
@@ -161,18 +176,39 @@ struct RollbackTests {
     }
 
     @Test("A job with no retry constraint rolls back on its first failure")
-    func noRetryConstraintRollsBackImmediately() async throws {
+    func noRetryPolicyRollsBackImmediately() async throws {
         let recorder = RollbackRecorder()
         let runner = makeRunner(recorder)
-        try await runner.register(NoRetryConstraintJob.self)
+        try await runner.register(NoRetryPolicyJob.self)
         try await runner.start()
 
-        try await runner.enqueue(NoRetryConstraintJob(key: "a"))
+        try await runner.enqueue(NoRetryPolicyJob(key: "a"))
         try await recorder.waitFor { await !$0.rolledBack.isEmpty }
 
         #expect(await recorder.rolledBack == ["a"])
         // A bare error is passed through unwrapped.
         #expect(await recorder.rollbackErrors == ["RollbackTestError"])
+        await runner.stop()
+    }
+
+    @Test("A job with no traits runs once, then rolls back and fails permanently")
+    func bareJobRunsOnce() async throws {
+        let recorder = RollbackRecorder()
+        let store = InMemoryJobStore()
+        let runner = JobRunner(context: recorder, store: store, maxConcurrent: 1)
+        try await runner.register(BareFailingJob.self)
+        try await runner.start()
+
+        let id = try await runner.enqueue(BareFailingJob(key: "a"))
+        try await recorder.waitFor { await !$0.rolledBack.isEmpty }
+        try await waitForBackgroundJobs()
+
+        #expect(await recorder.ran == ["a"])
+        #expect(await recorder.rolledBack == ["a"])
+        let stored = try #require(await store.load(id: id))
+        #expect(stored.attempts == 1)
+        #expect(stored.status == .permanentlyFailed)
+        #expect(stored.scheduledAt == nil)
         await runner.stop()
     }
 
@@ -205,7 +241,7 @@ struct RollbackTests {
             id: UUID(),
             typeName: String(describing: SucceedingJob.self),
             priority: .medium,
-            constraints: .init(retry: .noRetry),
+            traits: .init(retry: .noRetry),
             originalCreatedAt: Date.now,
             attempts: 0,
             status: .pending,

@@ -96,8 +96,8 @@ private struct CooperativeJob: Job {
     typealias Context = ShutdownRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .init(maxAttempts: 3, strategy: .fixed(delay: 600)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .fixed(delay: 600))]
     }
 
     func run(context: ShutdownRecorder) async throws {
@@ -121,8 +121,8 @@ private struct UncooperativeSucceedingJob: Job {
     typealias Context = ShutdownRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .noRetry)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry]
     }
 
     func run(context: ShutdownRecorder) async {
@@ -145,8 +145,8 @@ private struct BackoffJob: Job {
     typealias Context = ShutdownRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .init(maxAttempts: 5, strategy: .fixed(delay: 600)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 5, strategy: .fixed(delay: 600))]
     }
 
     func run(context: ShutdownRecorder) async throws {

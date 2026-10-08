@@ -36,11 +36,9 @@ import JobRunner
 
         public let url: URL
 
-        public var constraints: JobConstraints {
-            JobConstraints(
-                retry: RetryConstraint(maxAttempts: 5, strategy: .exponential(base: 2, maxDelay: 60)),
-                connectivity: .any
-            )
+        public var traits: JobTraits {
+            [RetryPolicy(maxAttempts: 5, strategy: .exponential(base: 2, maxDelay: 60)),
+             Connectivity.any]
         }
 
         public init(url: URL) {

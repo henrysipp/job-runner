@@ -15,8 +15,8 @@ private struct NonSendableErrorJob: Job {
     typealias Context = Void
     let key: String
 
-    var constraints: JobConstraints {
-        JobConstraints(retry: nil)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry]
     }
 
     func run(context _: Void) async throws {

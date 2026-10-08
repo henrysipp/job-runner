@@ -12,4 +12,6 @@ public enum JobError: Error, Equatable, Sendable {
     case jobNotFound(UUID)
     case notStarted
     case registrationAfterStart
+    case unregisteredConstraint(TraitKey)
+    case uninterpretedTrait(TraitKey)
 }

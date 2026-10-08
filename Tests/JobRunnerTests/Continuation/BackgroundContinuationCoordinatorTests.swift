@@ -136,7 +136,7 @@ struct BackgroundContinuationCoordinatorTests {
     // MARK: - Delegate routing
 
     @Test("Enqueuing a continues-in-background job submits; a foreground-only one does not")
-    func jobEnqueued_routesOnBackgroundConstraint() async throws {
+    func jobEnqueued_routesOnBackgroundPolicy() async throws {
         let scheduler = MockContinuationScheduler()
         let coordinator = makeCoordinator(scheduler: scheduler)
 
@@ -151,12 +151,12 @@ struct BackgroundContinuationCoordinatorTests {
         #expect(scheduler.submissions.count == 1)
     }
 
-    private func event(background: BackgroundConstraint) -> JobEnqueuedEvent {
+    private func event(background: BackgroundPolicy) -> JobEnqueuedEvent {
         JobEnqueuedEvent(
             id: UUID(),
             jobType: Never.self,
             priority: .high,
-            constraints: .init(background: background),
+            traits: .init(background: background),
             jobData: "{}"
         )
     }

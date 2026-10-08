@@ -236,12 +236,16 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         }
 
         let (typeName, jobData) = try registry.encode(job)
+        let traits = try TraitSnapshot(job.traits)
+        if let stray = job.traits.all.first(where: { $0 is any Constraint && !($0 is Connectivity) }) {
+            throw JobError.unregisteredConstraint(type(of: stray).key)
+        }
 
         let serialized = SerializedJob(
             id: UUID(),
             typeName: typeName,
             priority: priority,
-            constraints: job.constraints,
+            traits: traits,
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: nil,
@@ -256,7 +260,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             id: serialized.id,
             jobType: J.self,
             priority: priority,
-            constraints: serialized.constraints,
+            traits: serialized.traits,
             jobData: String(data: jobData, encoding: .utf8) ?? ""
         ))
 
@@ -334,11 +338,15 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
                 continue
             }
 
-            if let connectivity = job.constraints.connectivity {
-                let satisfies = await NetworkMonitor.shared.satisfies(connectivity)
-                if !satisfies {
-                    continue
+            var satisfied = true
+            for constraint in job.traits.constraints {
+                guard await isSatisfied(constraint) else {
+                    satisfied = false
+                    break
                 }
+            }
+            if !satisfied {
+                continue
             }
 
             if !canPickUp(job) || runningTasks[job.id] != nil {
@@ -351,8 +359,16 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return eligible
     }
 
+    /// Phase 1: `Connectivity` is the only constraint the runner knows. Anything else, which can
+    /// only come from a recovered row, fails closed.
+    private func isSatisfied(_ constraint: EncodedConstraint) async -> Bool {
+        guard constraint.key == Connectivity.key,
+              let connectivity = try? constraint.decode(as: Connectivity.self) else { return false }
+        return await NetworkMonitor.shared.satisfies(connectivity)
+    }
+
     private func canPickUp(_ job: SerializedJob) -> Bool {
-        job.constraints.background.isSatisfied(by: executionContext)
+        job.traits.background.isSatisfied(by: executionContext)
             && (executionContext == .foreground || job.attempts == 0)
     }
 
@@ -403,7 +419,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
     /// Each job contributes at most one outcome to a continuation, including retryable failures.
     private func recordBackgroundOutcome(_ outcome: BackgroundOutcome, for job: SerializedJob) {
-        guard job.constraints.background.requirement == .continuesInBackground,
+        guard job.traits.background.requirement == .continuesInBackground,
               backgroundOutcomes != nil, backgroundOutcomes?[job.id] == nil else { return }
         backgroundOutcomes?[job.id] = outcome
     }
@@ -414,11 +430,11 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         // Include live handles while their store mutation is in flight, and exclude outcomes
         // already recorded even if the store snapshot was read before that mutation.
         let queued = jobs.filter {
-            $0.constraints.background.requirement == .continuesInBackground
+            $0.traits.background.requirement == .continuesInBackground
                 && ($0.status == .running || ($0.status == .pending && $0.attempts == 0))
         }.map(\.id)
         let live = runningTasks.values.filter {
-            $0.job.constraints.background.requirement == .continuesInBackground
+            $0.job.traits.background.requirement == .continuesInBackground
         }.map { $0.job.id }
         let remaining = Set(queued + live).subtracting(outcomes.keys).count
         return BackgroundWorkSnapshot(
@@ -536,12 +552,12 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             isPermanent = false
         }
 
-        let retry = updated.constraints.retry
-        let willRetry = !isPermanent && retry.map { updated.attempts < $0.maxAttempts } == true
+        let retry = updated.traits.retry
+        let willRetry = !isPermanent && updated.attempts < retry.maxAttempts
         updated.scheduledAt = nil
         if willRetry {
             updated.status = .pending
-            if let delay = retry?.delay(forAttempt: updated.attempts) {
+            if let delay = retry.delay(forAttempt: updated.attempts) {
                 updated.scheduledAt = Date.now.addingTimeInterval(delay)
             }
         } else {

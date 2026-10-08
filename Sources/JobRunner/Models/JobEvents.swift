@@ -11,7 +11,7 @@ public struct JobEnqueuedEvent: Sendable {
     public let id: UUID
     public let jobType: Any.Type
     public let priority: Priority
-    public let constraints: JobConstraints
+    public let traits: TraitSnapshot
     public let jobData: String
 }
 

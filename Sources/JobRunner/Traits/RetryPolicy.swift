@@ -1,5 +1,5 @@
 //
-//  RetryConstraint.swift
+//  RetryPolicy.swift
 //  job-runner
 //
 //  Created by Henry on 2/4/26.
@@ -7,7 +7,11 @@
 
 import Foundation
 
-public struct RetryConstraint: Codable, Sendable, Equatable {
+/// How a failed attempt is retried. A job that declares no `RetryPolicy` runs once; `.default` is a
+/// preset to opt into, not the implicit value.
+public struct RetryPolicy: JobTrait, Equatable {
+    public static let key: TraitKey = "retry"
+
     public let maxAttempts: Int
     public let strategy: RetryStrategy
 
@@ -16,15 +20,12 @@ public struct RetryConstraint: Codable, Sendable, Equatable {
         self.strategy = strategy
     }
 
-    public static let `default` = RetryConstraint(
+    public static let `default` = RetryPolicy(
         maxAttempts: 3,
         strategy: .exponential(base: 2, maxDelay: 300)
     )
 
-    public static let noRetry = RetryConstraint(
-        maxAttempts: 1,
-        strategy: .immediate
-    )
+    public static let noRetry = RetryPolicy(maxAttempts: 1, strategy: .immediate)
 
     public func delay(forAttempt attempt: Int) -> TimeInterval? {
         strategy.delay(forAttempt: attempt)
