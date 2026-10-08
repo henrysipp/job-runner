@@ -1,5 +1,5 @@
 //
-//  BackgroundConstraintTests.swift
+//  BackgroundPolicyTests.swift
 //  job-runnerTests
 //
 //  Created by Henry on 9/18/26.
@@ -47,8 +47,8 @@ private struct ForegroundOnlyJob: Job {
     typealias Context = ExecutionRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .noRetry, background: .foregroundOnly)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry, BackgroundPolicy.foregroundOnly]
     }
 
     func run(context: ExecutionRecorder) async {
@@ -60,8 +60,8 @@ private struct ContinuesInBackgroundJob: Job {
     typealias Context = ExecutionRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .noRetry, background: .continuesInBackground)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry, BackgroundPolicy.continuesInBackground]
     }
 
     func run(context: ExecutionRecorder) async {
@@ -73,8 +73,8 @@ private struct GatedForegroundOnlyJob: Job {
     typealias Context = ExecutionRecorder
     let key: String
 
-    var constraints: JobConstraints {
-        .init(retry: .noRetry, background: .foregroundOnly)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry, BackgroundPolicy.foregroundOnly]
     }
 
     func run(context: ExecutionRecorder) async {
@@ -86,7 +86,7 @@ private struct GatedForegroundOnlyJob: Job {
 // MARK: - Tests
 
 @Suite(.serialized)
-struct BackgroundConstraintBehaviorTests {
+struct BackgroundPolicyBehaviorTests {
     private func makeRunner(_ recorder: ExecutionRecorder) -> JobRunner<ExecutionRecorder> {
         JobRunner(context: recorder, store: InMemoryJobStore(), maxConcurrent: 1)
     }
@@ -196,36 +196,21 @@ struct BackgroundConstraintBehaviorTests {
 
 // MARK: - Constraint
 
-struct BackgroundConstraintTests {
+struct BackgroundPolicyTests {
     @Test("foregroundOnly is satisfied only in the foreground")
     func foregroundOnlySatisfaction() {
-        #expect(BackgroundConstraint.foregroundOnly.isSatisfied(by: .foreground))
-        #expect(!BackgroundConstraint.foregroundOnly.isSatisfied(by: .background))
+        #expect(BackgroundPolicy.foregroundOnly.isSatisfied(by: .foreground))
+        #expect(!BackgroundPolicy.foregroundOnly.isSatisfied(by: .background))
     }
 
     @Test("continuesInBackground is satisfied in either context")
     func continuesInBackgroundSatisfaction() {
-        #expect(BackgroundConstraint.continuesInBackground.isSatisfied(by: .foreground))
-        #expect(BackgroundConstraint.continuesInBackground.isSatisfied(by: .background))
+        #expect(BackgroundPolicy.continuesInBackground.isSatisfied(by: .foreground))
+        #expect(BackgroundPolicy.continuesInBackground.isSatisfied(by: .background))
     }
 
-    @Test("Constraints default to foregroundOnly")
-    func defaultIsForegroundOnly() {
-        #expect(JobConstraints().background == .foregroundOnly)
-    }
-
-    @Test("Encoded constraints round-trip")
-    func roundTrips() throws {
-        let original = JobConstraints(background: .continuesInBackground)
-        let data = try JSONEncoder().encode(original)
-        let decoded = try JSONDecoder().decode(JobConstraints.self, from: data)
-        #expect(decoded.background == .continuesInBackground)
-    }
-
-    @Test("Legacy JSON without the key decodes as foregroundOnly")
-    func legacyJSONDecodesAsForegroundOnly() throws {
-        let legacyJSON = Data("{}".utf8)
-        let decoded = try JSONDecoder().decode(JobConstraints.self, from: legacyJSON)
-        #expect(decoded.background == .foregroundOnly)
+    @Test("Snapshots default to foregroundOnly")
+    func defaultIsForegroundOnly() throws {
+        #expect(try TraitSnapshot([]).background == .foregroundOnly)
     }
 }

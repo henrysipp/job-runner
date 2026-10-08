@@ -19,13 +19,13 @@ struct FileSystemJobStoreTests {
 
     private static func makeJob(
         status: JobStatus = .pending,
-        persistence: PersistenceConstraint = .persisted
+        persistence: Persistence = .persisted
     ) -> SerializedJob {
         SerializedJob(
             id: UUID(),
             typeName: "TestJob",
             priority: .medium,
-            constraints: JobConstraints(persistence: persistence),
+            traits: TraitSnapshot(persistence: persistence),
             originalCreatedAt: Date(),
             attempts: 0,
             status: status,

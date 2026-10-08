@@ -89,7 +89,7 @@ public actor BackgroundContinuationCoordinator: JobRunnerDelegate {
     }
 
     public nonisolated func jobEnqueued(_ event: JobEnqueuedEvent) {
-        guard event.constraints.background.requirement == .continuesInBackground else { return }
+        guard event.traits.background.requirement == .continuesInBackground else { return }
         Task { await self.requestContinuation() }
     }
 

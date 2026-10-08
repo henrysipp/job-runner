@@ -57,10 +57,12 @@ try await runner.enqueue(
 )
 ```
 
-### Constraints
+### Traits
 
-Each job declares its own constraints. Retry policy moved onto `RetryConstraint`, so there is no
-`maxAttempts` on the runner.
+Each job declares its traits. A trait is a declared property of the job with exactly one
+interpreter. Policies are interpreted by the runner or the store. Constraints gate pickup. Today
+`Connectivity` is the only constraint; registering app-defined constraints and their evaluators
+is the next step.
 
 ```swift
 struct UploadPhotoJob: Job {
@@ -68,25 +70,33 @@ struct UploadPhotoJob: Job {
 
   let localId: String
 
-  var constraints: JobConstraints {
-    .init(
-      retry: .init(maxAttempts: 10, strategy: .exponential(base: 2, maxDelay: 300)),
-      connectivity: .notExpensive,
-      persistence: .persisted,
-      background: .continuesInBackground
-    )
+  var traits: JobTraits {
+    [RetryPolicy(maxAttempts: 10, strategy: .exponential(base: 2, maxDelay: 300)),
+     Persistence.persisted,
+     BackgroundPolicy.continuesInBackground,
+     Connectivity.notExpensive]
   }
 
   func run(context: AppContext) async throws { /* ... */ }
 }
 ```
 
-`connectivity` and `background` are eligibility constraints: the runner compares them against
-live state and defers jobs that don't qualify, leaving them `.pending` rather than failing them.
+| Trait | Kind | Default when absent |
+|---|---|---|
+| `RetryPolicy` | policy | `.noRetry`: the job runs once |
+| `Persistence` | policy | `.ephemeral`: gone on relaunch |
+| `BackgroundPolicy` | policy | `.foregroundOnly` |
+| `Connectivity` | constraint | none: the job is not gated on the network |
+
+A job declares at most one trait per key. Traits are snapshotted into the stored job at enqueue;
+changing a job type's traits in a later build does not affect rows already on disk.
+
+`Connectivity` and `BackgroundPolicy` gate eligibility: the runner compares them against live
+state and defers jobs that don't qualify, leaving them `.pending` rather than failing them.
 
 ### Background
 
-`background` declares whether a job may keep running once the host application is backgrounded:
+`BackgroundPolicy` declares whether a job may keep running once the host application is backgrounded:
 
 | Requirement | Meaning |
 |---|---|

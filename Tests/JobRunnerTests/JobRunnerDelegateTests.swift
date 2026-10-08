@@ -145,8 +145,8 @@ private struct EventTestJob: Job {
 private struct EventFailingJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .immediate)]
     }
 
     func run(context _: Void) async throws {
@@ -166,8 +166,8 @@ private struct EventPermanentFailJob: Job {
 private struct EventNoRetryFailJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: nil)
+    var traits: JobTraits {
+        [RetryPolicy.noRetry]
     }
 
     func run(context _: Void) async throws {
@@ -283,7 +283,7 @@ struct JobRunnerDelegateTests {
         #expect(events[0].error as? TestError == .intentionalFailure)
     }
 
-    @Test func failedEventNoRetryConstraint() async throws {
+    @Test func failedEventNoRetryPolicy() async throws {
         try await waitForBackgroundJobs()
 
         let handler = RecordingDelegate()

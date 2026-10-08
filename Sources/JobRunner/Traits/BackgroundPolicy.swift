@@ -1,5 +1,5 @@
 //
-//  BackgroundConstraint.swift
+//  BackgroundPolicy.swift
 //  job-runner
 //
 //  Created by Henry on 9/18/26.
@@ -9,14 +9,17 @@ import Foundation
 
 /// Whether a job may keep running once the host application is backgrounded.
 ///
-/// An eligibility constraint in the same sense as `ConnectivityConstraint`: the runner compares the
-/// live state supplied via `JobRunner.setExecutionContext(_:)` against the job's requirement and
-/// defers the jobs that don't qualify.
+/// The runner compares the live state supplied via `JobRunner.setExecutionContext(_:)` against
+/// the job's requirement and defers the jobs that don't qualify. This stays a policy rather than
+/// a `Constraint` because the runner also reads it for the first-attempt-only rule while
+/// backgrounded and for continuation accounting.
 ///
 /// `.continuesInBackground` states intent, not mechanism. It tells the runner to keep dequeuing the
 /// job while backgrounded, and it tells the host that this work is worth asking the OS for time on
 /// behalf of. How the host does that is entirely its business.
-public struct BackgroundConstraint: Codable, Sendable, Equatable {
+public struct BackgroundPolicy: JobTrait, Equatable {
+    public static let key: TraitKey = "background"
+
     public enum Requirement: String, Codable, Sendable, Equatable {
         /// Deferred while backgrounded. Resumes when the host reports `.foreground` again.
         case foregroundOnly
@@ -31,8 +34,8 @@ public struct BackgroundConstraint: Codable, Sendable, Equatable {
         self.requirement = requirement
     }
 
-    public static let foregroundOnly = BackgroundConstraint(requirement: .foregroundOnly)
-    public static let continuesInBackground = BackgroundConstraint(requirement: .continuesInBackground)
+    public static let foregroundOnly = BackgroundPolicy(requirement: .foregroundOnly)
+    public static let continuesInBackground = BackgroundPolicy(requirement: .continuesInBackground)
 
     func isSatisfied(by context: ExecutionContext) -> Bool {
         switch requirement {

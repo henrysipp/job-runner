@@ -12,13 +12,11 @@ private actor ProgressRecorder {
 private struct ProgressJob: Job {
     enum Outcome: String, Codable { case success, permanentFailure, exhaustedRetries, retry, interrupted }
     let outcome: Outcome
-    var background: BackgroundConstraint = .continuesInBackground
+    var background: BackgroundPolicy = .continuesInBackground
 
-    var constraints: JobConstraints {
-        .init(
-            retry: .init(maxAttempts: 2, strategy: outcome == .retry ? .fixed(delay: 600) : .immediate),
-            background: background
-        )
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 2, strategy: outcome == .retry ? .fixed(delay: 600) : .immediate),
+         background]
     }
 
     func run(context: ProgressRecorder) async throws {

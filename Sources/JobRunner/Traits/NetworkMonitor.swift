@@ -57,7 +57,7 @@ public actor NetworkMonitor {
         callbacks.removeValue(forKey: id)
     }
 
-    public func satisfies(_ constraint: ConnectivityConstraint) -> Bool {
+    public func satisfies(_ constraint: Connectivity) -> Bool {
         guard let path = currentPath else {
             return false
         }

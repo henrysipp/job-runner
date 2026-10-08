@@ -143,8 +143,8 @@ struct SuccessJob: Job {
 struct FailingJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .immediate)]
     }
 
     func run(context _: Void) async throws {
@@ -343,7 +343,7 @@ extension SimpleJobRunnerTests {
             id: UUID(),
             typeName: "SuccessJob",
             priority: .medium,
-            constraints: JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate)),
+            traits: TraitSnapshot(retry: RetryPolicy(maxAttempts: 3, strategy: .immediate)),
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: nil,
@@ -356,7 +356,7 @@ extension SimpleJobRunnerTests {
             id: UUID(),
             typeName: "SuccessJob",
             priority: .high,
-            constraints: JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate)),
+            traits: TraitSnapshot(retry: RetryPolicy(maxAttempts: 3, strategy: .immediate)),
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: nil,
@@ -369,7 +369,7 @@ extension SimpleJobRunnerTests {
             id: UUID(),
             typeName: "SuccessJob",
             priority: .low,
-            constraints: JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate)),
+            traits: TraitSnapshot(retry: RetryPolicy(maxAttempts: 3, strategy: .immediate)),
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: nil,
@@ -408,7 +408,7 @@ extension SimpleJobRunnerTests {
             id: UUID(),
             typeName: "UnknownJobType",
             priority: .medium,
-            constraints: JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .immediate)),
+            traits: TraitSnapshot(retry: RetryPolicy(maxAttempts: 3, strategy: .immediate)),
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: nil,
@@ -444,8 +444,8 @@ struct FailingJobWithAttempts: Job {
     let key: String
     let maxAttempts: Int
 
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: maxAttempts, strategy: .immediate))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: maxAttempts, strategy: .immediate)]
     }
 
     func run(context _: Void) async throws {
@@ -604,8 +604,8 @@ extension SimpleJobRunnerTests {
 struct NoRetryJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        .noRetry
+    var traits: JobTraits {
+        [RetryPolicy.noRetry]
     }
 
     func run(context _: Void) async throws {
@@ -617,8 +617,8 @@ struct NoRetryJob: Job {
 struct ExponentialBackoffJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .exponential(base: 0.05, maxDelay: 1.0)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .exponential(base: 0.05, maxDelay: 1.0))]
     }
 
     func run(context _: Void) async throws {
@@ -630,8 +630,8 @@ struct ExponentialBackoffJob: Job {
 struct LinearBackoffJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .linear(step: 0.05)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .linear(step: 0.05))]
     }
 
     func run(context _: Void) async throws {
@@ -643,8 +643,8 @@ struct LinearBackoffJob: Job {
 struct FixedBackoffJob: Job {
     typealias Context = Void
     let key: String
-    var constraints: JobConstraints {
-        JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .fixed(delay: 0.05)))
+    var traits: JobTraits {
+        [RetryPolicy(maxAttempts: 3, strategy: .fixed(delay: 0.05))]
     }
 
     func run(context _: Void) async throws {
@@ -776,7 +776,7 @@ extension SimpleJobRunnerTests {
             id: UUID(),
             typeName: "SuccessJob",
             priority: .high,
-            constraints: JobConstraints(retry: RetryConstraint(maxAttempts: 3, strategy: .exponential(base: 2, maxDelay: 300))),
+            traits: TraitSnapshot(retry: RetryPolicy(maxAttempts: 3, strategy: .exponential(base: 2, maxDelay: 300))),
             originalCreatedAt: Date.now,
             lastAttemptedAt: nil,
             scheduledAt: Date.now.addingTimeInterval(10),

@@ -8,7 +8,7 @@
 import Foundation
 
 public enum JobFailure: Error, Sendable {
-    /// Indicates a transient failure that should be retried according to constraints
+    /// Indicates a transient failure that should be retried according to the job's `RetryPolicy`
     case transient(any Error & Sendable)
 
     /// Indicates a permanent failure that should not be retried
