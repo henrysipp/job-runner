@@ -11,6 +11,8 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol, BackgroundCont
     public let context: Context
     public private(set) var delegate: (any JobRunnerDelegate)?
     public var registeredTypes: [String] = []
+    public var registeredConstraintKeys: [TraitKey] = []
+    public var signalConstraintsChangedCallCount = 0
     private var enqueuedJobsInternal: [(job: Any, priority: Priority)] = []
     public var startCallCount: Int = 0
     public var isStarted: Bool = false
@@ -35,6 +37,20 @@ public actor MockJobRunner<Context: Sendable>: JobRunnerProtocol, BackgroundCont
         }
         let typeName = String(describing: type)
         registeredTypes.append(typeName)
+    }
+
+    public func registerConstraint<C: Constraint>(
+        _: C.Type,
+        evaluator _: @escaping @Sendable (C) async -> Bool
+    ) async throws {
+        if let error = shouldThrowOnRegister {
+            throw error
+        }
+        registeredConstraintKeys.append(C.key)
+    }
+
+    public func signalConstraintsChanged() async {
+        signalConstraintsChangedCallCount += 1
     }
 
     public func start() async throws {

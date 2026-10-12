@@ -10,6 +10,11 @@ import Foundation
 public protocol JobRunnerProtocol<Context>: Actor {
     associatedtype Context: Sendable
     func register<J: Job>(_ type: J.Type) async throws where J.Context == Context
+    func registerConstraint<C: Constraint>(
+        _ type: C.Type,
+        evaluator: @escaping @Sendable (C) async -> Bool
+    ) async throws
+    func signalConstraintsChanged() async
     func start() async throws
     func stop() async
     @discardableResult
