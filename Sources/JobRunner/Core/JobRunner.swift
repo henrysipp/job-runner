@@ -17,6 +17,22 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     private var isRunning = false
     private var isProcessing = false
     private var networkCallbackId: UUID?
+    private struct ConstraintEvaluator {
+        let type: Any.Type
+        let isSatisfied: @Sendable (EncodedConstraint) async -> Bool
+
+        init<C: Constraint>(_ type: C.Type, evaluator: @escaping @Sendable (C) async -> Bool) {
+            self.type = type
+            isSatisfied = { encoded in
+                guard let constraint = try? encoded.decode(as: C.self) else { return false }
+                return await evaluator(constraint)
+            }
+        }
+    }
+
+    private var constraintEvaluators: [TraitKey: ConstraintEvaluator] = [
+        Connectivity.key: ConstraintEvaluator(Connectivity.self) { await NetworkMonitor.shared.satisfies($0) },
+    ]
     private var statusContinuations: [UUID: AsyncStream<QueueStatus>.Continuation] = [:]
     private struct RunningTask {
         let token: UUID
@@ -112,6 +128,23 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             throw JobError.registrationAfterStart
         }
         registry.register(type)
+    }
+
+    /// Registers the evaluator for a host-defined constraint. A job carrying a constraint with no
+    /// evaluator is rejected at enqueue.
+    public func registerConstraint<C: Constraint>(
+        _ type: C.Type,
+        evaluator: @escaping @Sendable (C) async -> Bool
+    ) throws {
+        guard !isRunning else {
+            throw JobError.registrationAfterStart
+        }
+        constraintEvaluators[C.key] = ConstraintEvaluator(type, evaluator: evaluator)
+    }
+
+    /// Re-drives the queue after state an evaluator reads has changed.
+    public func signalConstraintsChanged() {
+        Task { await processQueue() }
     }
 
     public func start() async throws {
@@ -237,7 +270,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         let (typeName, jobData) = try registry.encode(job)
         let traits = try TraitSnapshot(job.traits)
-        if let stray = job.traits.all.first(where: { $0 is any Constraint && !($0 is Connectivity) }) {
+        if let stray = job.traits.all.first(where: { $0 is any Constraint && !canEvaluate($0) }) {
             throw JobError.unregisteredConstraint(type(of: stray).key)
         }
 
@@ -359,12 +392,14 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return eligible
     }
 
-    /// Phase 1: `Connectivity` is the only constraint the runner knows. Anything else, which can
-    /// only come from a recovered row, fails closed.
+    private func canEvaluate(_ trait: any JobTrait) -> Bool {
+        constraintEvaluators[type(of: trait).key]?.type == type(of: trait)
+    }
+
+    /// A key with no evaluator in this build can only come from a recovered row; it fails closed.
     private func isSatisfied(_ constraint: EncodedConstraint) async -> Bool {
-        guard constraint.key == Connectivity.key,
-              let connectivity = try? constraint.decode(as: Connectivity.self) else { return false }
-        return await NetworkMonitor.shared.satisfies(connectivity)
+        guard let evaluator = constraintEvaluators[constraint.key] else { return false }
+        return await evaluator.isSatisfied(constraint)
     }
 
     private func canPickUp(_ job: SerializedJob) -> Bool {

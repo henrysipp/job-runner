@@ -60,9 +60,9 @@ try await runner.enqueue(
 ### Traits
 
 Each job declares its traits. A trait is a declared property of the job with exactly one
-interpreter. Policies are interpreted by the runner or the store. Constraints gate pickup. Today
-`Connectivity` is the only constraint; registering app-defined constraints and their evaluators
-is the next step.
+interpreter. Policies are interpreted by the runner or the store. Constraints gate pickup, and
+each one has an evaluator registered with the runner. `Connectivity` ships registered; the host
+registers its own before `start()`.
 
 ```swift
 struct UploadPhotoJob: Job {
@@ -93,6 +93,25 @@ changing a job type's traits in a later build does not affect rows already on di
 
 `Connectivity` and `BackgroundPolicy` gate eligibility: the runner compares them against live
 state and defers jobs that don't qualify, leaving them `.pending` rather than failing them.
+
+A host-defined constraint is a `Constraint` with a unique key plus an evaluator. The runner
+re-evaluates on its own triggers (enqueue, reachability, execution context, retry backoff);
+call `signalConstraintsChanged()` when the state your evaluator reads changes.
+
+```swift
+struct CameraStorageMounted: Constraint {
+  static let key: TraitKey = "camera_storage_mounted"
+}
+
+try await runner.registerConstraint(CameraStorageMounted.self) { _ in
+  await storage.isMounted
+}
+try await runner.start()
+
+storage.onMountChange { Task { await runner.signalConstraintsChanged() } }
+```
+
+A recovered row whose constraint has no evaluator in the current build stays `.pending`.
 
 ### Background
 
