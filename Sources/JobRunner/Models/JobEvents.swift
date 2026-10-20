@@ -36,6 +36,7 @@ public struct JobFailedEvent: Sendable {
     public let errorDescription: String
     public let error: any Error
     public let attempt: Int
+    public let isPermanent: Bool
     public let willRetry: Bool
     public let nextRetryAt: Date?
     public let jobData: String

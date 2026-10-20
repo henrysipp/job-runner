@@ -576,9 +576,9 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
         let jobType = registry.resolveType(serialized.typeName) ?? Never.self as Any.Type
         let jobDataString = String(data: serialized.jobData, encoding: .utf8) ?? ""
-        let errorType = String(reflecting: type(of: error))
-        let errorDescription = String(describing: error)
         let underlyingError = (error as? JobFailure)?.underlyingError ?? error
+        let errorType = String(reflecting: type(of: underlyingError))
+        let errorDescription = String(describing: underlyingError)
 
         let isPermanent: Bool
         if case .permanent(_)? = error as? JobFailure {
@@ -611,6 +611,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             errorDescription: errorDescription,
             error: underlyingError,
             attempt: updated.attempts,
+            isPermanent: isPermanent,
             willRetry: willRetry,
             nextRetryAt: updated.scheduledAt,
             jobData: jobDataString
