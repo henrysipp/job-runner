@@ -261,6 +261,9 @@ struct JobRunnerDelegateTests {
         // Final attempt should not retry
         #expect(events[2].willRetry == false)
         #expect(events[2].attempt == 3)
+        #expect(events[2].isPermanent == false)
+        #expect(events[2].errorType.hasSuffix("TestError"))
+        #expect(events[2].errorDescription == "intentionalFailure")
     }
 
     @Test func failedEventPermanentFailure() async throws {
@@ -281,6 +284,9 @@ struct JobRunnerDelegateTests {
         #expect(events[0].attempt == 1)
         #expect(events[0].jobType is EventPermanentFailJob.Type)
         #expect(events[0].error as? TestError == .intentionalFailure)
+        #expect(events[0].isPermanent == true)
+        #expect(events[0].errorType.hasSuffix("TestError"))
+        #expect(events[0].errorDescription == "intentionalFailure")
     }
 
     @Test func failedEventNoRetryPolicy() async throws {
