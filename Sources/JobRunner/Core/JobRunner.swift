@@ -403,9 +403,11 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return await evaluator.isSatisfied(constraint)
     }
 
+    /// In the background a job also needs an active continuation: without OS-granted time, starting
+    /// work just gets the process suspended mid-flight.
     private func canPickUp(_ job: SerializedJob) -> Bool {
         job.traits.background.isSatisfied(by: executionContext)
-            && (executionContext == .foreground || job.attempts == 0)
+            && (executionContext == .foreground || (job.attempts == 0 && backgroundOutcomes != nil))
     }
 
     private func scheduleWakeUpIfNeeded() {
@@ -447,6 +449,8 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
     public func beginBackgroundContinuation() {
         backgroundOutcomes = [:]
+        // Background jobs deferred for lack of a continuation are now eligible.
+        Task { await processQueue() }
     }
 
     public func endBackgroundContinuation() {
