@@ -122,8 +122,8 @@ struct BackgroundPolicyBehaviorTests {
         try await runner.start()
         await runner.setExecutionContext(.background)
 
-        // The whole point of switching context rather than stopping: the queue keeps accepting
-        // work. `stop()` would make this throw `JobError.notStarted`.
+        // Unlike `stop()`, the queue keeps running in the background context, so the job is
+        // deferred by its policy rather than by a halted runner.
         try await runner.enqueue(ForegroundOnlyJob(key: "a"))
 
         #expect(await runner.currentStatus().pending == 1)

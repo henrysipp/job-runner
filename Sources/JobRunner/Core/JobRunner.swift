@@ -189,7 +189,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     /// Halts job pickup, leaving in-flight jobs to run to completion.
     ///
     /// This does not cancel anything and does not wait. Use `shutdown(timeout:)` when the caller
-    /// needs in-flight work actually stopped.
+    /// needs in-flight work actually stopped. `enqueue` keeps persisting jobs while stopped.
     public func stop() async {
         let callbackId = haltPickup()
         if let callbackId { await NetworkMonitor.shared.removeCallback(callbackId) }
@@ -262,12 +262,13 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return finished
     }
 
+    /// Persists a job to the store.
+    ///
+    /// A stopped runner still accepts work: the job is saved as `.pending` and picked up by the
+    /// next `start()`. Hosts stop the runner when backgrounding, and callbacks that land in that
+    /// window must not lose their work.
     @discardableResult
     public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws -> UUID where J.Context == Context {
-        guard isRunning else {
-            throw JobError.notStarted
-        }
-
         let (typeName, jobData) = try registry.encode(job)
         let traits = try TraitSnapshot(job.traits)
         if let stray = job.traits.all.first(where: { $0 is any Constraint && !canEvaluate($0) }) {
