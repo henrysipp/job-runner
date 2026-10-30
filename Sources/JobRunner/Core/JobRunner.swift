@@ -368,20 +368,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         var eligible: [SerializedJob] = []
 
         for job in jobs {
-            if let scheduledAt = job.scheduledAt, scheduledAt > now {
-                continue
-            }
-
-            var satisfied = true
-            for constraint in job.traits.constraints {
-                guard await isSatisfied(constraint) else {
-                    satisfied = false
-                    break
-                }
-            }
-            if !satisfied {
-                continue
-            }
+            guard await isReady(job, now: now) else { continue }
 
             if !canPickUp(job) || runningTasks[job.id] != nil {
                 continue
@@ -391,6 +378,15 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         }
 
         return eligible
+    }
+
+    /// Due and with every constraint satisfied, regardless of execution context.
+    private func isReady(_ job: SerializedJob, now: Date) async -> Bool {
+        if let scheduledAt = job.scheduledAt, scheduledAt > now { return false }
+        for constraint in job.traits.constraints {
+            guard await isSatisfied(constraint) else { return false }
+        }
+        return true
     }
 
     private func canEvaluate(_ trait: any JobTrait) -> Bool {
@@ -469,10 +465,17 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let outcomes = backgroundOutcomes ?? [:]
         // Include live handles while their store mutation is in flight, and exclude outcomes
         // already recorded even if the store snapshot was read before that mutation.
-        let queued = jobs.filter {
-            $0.traits.background.requirement == .continuesInBackground
-                && ($0.status == .running || ($0.status == .pending && $0.attempts == 0))
-        }.map(\.id)
+        // A pending job blocked by a constraint (e.g. storage unplugged) is paused, not remaining:
+        // counting it would hold the continuation open and inflate its total.
+        let now = Date.now
+        var queued: [UUID] = []
+        for job in jobs where job.traits.background.requirement == .continuesInBackground {
+            if job.status == .running {
+                queued.append(job.id)
+            } else if job.status == .pending, job.attempts == 0, await isReady(job, now: now) {
+                queued.append(job.id)
+            }
+        }
         let live = runningTasks.values.filter {
             $0.job.traits.background.requirement == .continuesInBackground
         }.map { $0.job.id }
