@@ -122,26 +122,86 @@ struct BackgroundPolicyBehaviorTests {
         try await runner.start()
         await runner.setExecutionContext(.background)
 
-        // The whole point of switching context rather than stopping: the queue keeps accepting
-        // work. `stop()` would make this throw `JobError.notStarted`.
+        // Unlike `stop()`, the queue keeps running in the background context, so the job is
+        // deferred by its policy rather than by a halted runner.
         try await runner.enqueue(ForegroundOnlyJob(key: "a"))
 
         #expect(await runner.currentStatus().pending == 1)
         await runner.stop()
     }
 
-    @Test("A continues-in-background job runs while backgrounded")
+    @Test("A continues-in-background job runs while backgrounded during a continuation")
     func continuesInBackgroundJobRunsWhileBackgrounded() async throws {
         let recorder = ExecutionRecorder()
         let runner = makeRunner(recorder)
         try await runner.register(ContinuesInBackgroundJob.self)
         try await runner.start()
+        await runner.beginBackgroundContinuation()
         await runner.setExecutionContext(.background)
 
         try await runner.enqueue(ContinuesInBackgroundJob(key: "a"))
         await recorder.waitFor { await !$0.ran.isEmpty }
 
         #expect(await recorder.ran == ["a"])
+        await runner.stop()
+    }
+
+    @Test("A continues-in-background job is deferred while backgrounded without a continuation")
+    func continuesInBackgroundJobDeferredWithoutContinuation() async throws {
+        let recorder = ExecutionRecorder()
+        let runner = makeRunner(recorder)
+        try await runner.register(ContinuesInBackgroundJob.self)
+        try await runner.start()
+        await runner.setExecutionContext(.background)
+
+        // No OS time was granted (flag off, submission failed, or enqueued after backgrounding).
+        try await runner.enqueue(ContinuesInBackgroundJob(key: "a"))
+        try await waitForBackgroundJobs()
+
+        #expect(await recorder.ran.isEmpty)
+        #expect(await runner.currentStatus().pending == 1)
+
+        await runner.setExecutionContext(.foreground)
+        await recorder.waitFor { await !$0.ran.isEmpty }
+
+        #expect(await recorder.ran == ["a"])
+        await runner.stop()
+    }
+
+    @Test("Beginning a continuation picks up background jobs deferred before it")
+    func beginningContinuationPicksUpDeferredJobs() async throws {
+        let recorder = ExecutionRecorder()
+        let runner = makeRunner(recorder)
+        try await runner.register(ContinuesInBackgroundJob.self)
+        try await runner.start()
+        await runner.setExecutionContext(.background)
+        try await runner.enqueue(ContinuesInBackgroundJob(key: "a"))
+        try await waitForBackgroundJobs()
+        #expect(await recorder.ran.isEmpty)
+
+        // A system launch of the continuation task begins a session while already backgrounded.
+        await runner.beginBackgroundContinuation()
+        await recorder.waitFor { await !$0.ran.isEmpty }
+
+        #expect(await recorder.ran == ["a"])
+        await runner.stop()
+    }
+
+    @Test("Ending a continuation stops background pickup")
+    func endingContinuationStopsBackgroundPickup() async throws {
+        let recorder = ExecutionRecorder()
+        let runner = makeRunner(recorder)
+        try await runner.register(ContinuesInBackgroundJob.self)
+        try await runner.start()
+        await runner.beginBackgroundContinuation()
+        await runner.setExecutionContext(.background)
+        await runner.endBackgroundContinuation()
+
+        try await runner.enqueue(ContinuesInBackgroundJob(key: "a"))
+        try await waitForBackgroundJobs()
+
+        #expect(await recorder.ran.isEmpty)
+        #expect(await runner.currentStatus().pending == 1)
         await runner.stop()
     }
 

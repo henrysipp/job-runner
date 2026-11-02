@@ -120,7 +120,7 @@ A recovered row whose constraint has no evaluator in the current build stays `.p
 | Requirement | Meaning |
 |---|---|
 | `.foregroundOnly` | Default. Deferred while backgrounded. |
-| `.continuesInBackground` | Eligible while backgrounded, and worth keeping the process alive for. |
+| `.continuesInBackground` | Eligible while backgrounded during a continuation, and worth keeping the process alive for. |
 
 The runner cannot observe application lifecycle itself, so the host reports it:
 
@@ -140,6 +140,11 @@ host backgrounds is left alone to finish.
 submitting a `BGContinuedProcessingTaskRequest` on iOS, is up to the host. The optional continuation
 coordinator and iOS adapter below provide that integration.
 
+While backgrounded, a `.continuesInBackground` job is only picked up between
+`beginBackgroundContinuation()` and `endBackgroundContinuation()`. Outside a continuation the OS
+has granted no time, so starting the job would only get the process suspended mid-flight; it waits
+for foreground like any other job. Beginning a continuation re-drives the queue.
+
 ### Stopping
 
 Two options, with deliberately different semantics.
@@ -151,6 +156,9 @@ await runner.stop()
 // Halts pickup, cancels in-flight jobs, and waits for their teardown.
 let allStopped = await runner.shutdown(timeout: .seconds(3))
 ```
+
+A stopped runner still accepts `enqueue`: the job is persisted as `.pending` and picked up by the
+next `start()`.
 
 `shutdown` is for when the caller has a deadline, such as an OS expiration handler. Cancellation is
 cooperative: a job that neither awaits a cancellable operation nor checks `Task.isCancelled` will

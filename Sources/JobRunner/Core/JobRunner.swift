@@ -189,7 +189,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
     /// Halts job pickup, leaving in-flight jobs to run to completion.
     ///
     /// This does not cancel anything and does not wait. Use `shutdown(timeout:)` when the caller
-    /// needs in-flight work actually stopped.
+    /// needs in-flight work actually stopped. `enqueue` keeps persisting jobs while stopped.
     public func stop() async {
         let callbackId = haltPickup()
         if let callbackId { await NetworkMonitor.shared.removeCallback(callbackId) }
@@ -262,12 +262,13 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return finished
     }
 
+    /// Persists a job to the store.
+    ///
+    /// A stopped runner still accepts work: the job is saved as `.pending` and picked up by the
+    /// next `start()`. Hosts stop the runner when backgrounding, and callbacks that land in that
+    /// window must not lose their work.
     @discardableResult
     public func enqueue<J: Job>(_ job: J, priority: Priority = .medium) async throws -> UUID where J.Context == Context {
-        guard isRunning else {
-            throw JobError.notStarted
-        }
-
         let (typeName, jobData) = try registry.encode(job)
         let traits = try TraitSnapshot(job.traits)
         if let stray = job.traits.all.first(where: { $0 is any Constraint && !canEvaluate($0) }) {
@@ -367,20 +368,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         var eligible: [SerializedJob] = []
 
         for job in jobs {
-            if let scheduledAt = job.scheduledAt, scheduledAt > now {
-                continue
-            }
-
-            var satisfied = true
-            for constraint in job.traits.constraints {
-                guard await isSatisfied(constraint) else {
-                    satisfied = false
-                    break
-                }
-            }
-            if !satisfied {
-                continue
-            }
+            guard await isReady(job, now: now) else { continue }
 
             if !canPickUp(job) || runningTasks[job.id] != nil {
                 continue
@@ -390,6 +378,15 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         }
 
         return eligible
+    }
+
+    /// Due and with every constraint satisfied, regardless of execution context.
+    private func isReady(_ job: SerializedJob, now: Date) async -> Bool {
+        if let scheduledAt = job.scheduledAt, scheduledAt > now { return false }
+        for constraint in job.traits.constraints {
+            guard await isSatisfied(constraint) else { return false }
+        }
+        return true
     }
 
     private func canEvaluate(_ trait: any JobTrait) -> Bool {
@@ -402,9 +399,11 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         return await evaluator.isSatisfied(constraint)
     }
 
+    /// In the background a job also needs an active continuation: without OS-granted time, starting
+    /// work just gets the process suspended mid-flight.
     private func canPickUp(_ job: SerializedJob) -> Bool {
         job.traits.background.isSatisfied(by: executionContext)
-            && (executionContext == .foreground || job.attempts == 0)
+            && (executionContext == .foreground || (job.attempts == 0 && backgroundOutcomes != nil))
     }
 
     private func scheduleWakeUpIfNeeded() {
@@ -446,6 +445,8 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
 
     public func beginBackgroundContinuation() {
         backgroundOutcomes = [:]
+        // Background jobs deferred for lack of a continuation are now eligible.
+        Task { await processQueue() }
     }
 
     public func endBackgroundContinuation() {
@@ -464,10 +465,17 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let outcomes = backgroundOutcomes ?? [:]
         // Include live handles while their store mutation is in flight, and exclude outcomes
         // already recorded even if the store snapshot was read before that mutation.
-        let queued = jobs.filter {
-            $0.traits.background.requirement == .continuesInBackground
-                && ($0.status == .running || ($0.status == .pending && $0.attempts == 0))
-        }.map(\.id)
+        // A pending job blocked by a constraint (e.g. storage unplugged) is paused, not remaining:
+        // counting it would hold the continuation open and inflate its total.
+        let now = Date.now
+        var queued: [UUID] = []
+        for job in jobs where job.traits.background.requirement == .continuesInBackground {
+            if job.status == .running {
+                queued.append(job.id)
+            } else if job.status == .pending, job.attempts == 0, await isReady(job, now: now) {
+                queued.append(job.id)
+            }
+        }
         let live = runningTasks.values.filter {
             $0.job.traits.background.requirement == .continuesInBackground
         }.map { $0.job.id }
