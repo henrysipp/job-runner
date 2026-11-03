@@ -198,6 +198,9 @@ public actor BackgroundContinuationCoordinator: JobRunnerDelegate {
         await finish(session)
     }
 
+    /// Each job's share of the platform progress, fine enough for a running job's fraction to move it.
+    static let unitsPerJob: Int64 = 1000
+
     private func pumpProgress(
         of task: some ContinuationTask,
         runner: any BackgroundContinuationRunning,
@@ -206,11 +209,18 @@ public actor BackgroundContinuationCoordinator: JobRunnerDelegate {
         let clock = ContinuousClock()
         let deadline = clock.now + configuration.maxDuration
         var lastProgress: BackgroundWorkSnapshot?
+        var completedUnits: Int64 = 0
         while !state.isExpiring {
             let snapshot = await runner.backgroundWorkRemaining()
             guard !state.isExpiring else { return .expired }
-            task.progress.totalUnitCount = Int64(snapshot.total)
-            task.progress.completedUnitCount = Int64(snapshot.finished)
+            let totalUnits = Int64(snapshot.total) * Self.unitsPerJob
+            // A retry restarts its job's fraction at zero; the platform reads a falling count as a stall.
+            completedUnits = min(
+                max(completedUnits, Int64(snapshot.completedWork * Double(Self.unitsPerJob))),
+                totalUnits
+            )
+            task.progress.totalUnitCount = totalUnits
+            task.progress.completedUnitCount = completedUnits
             if snapshot != lastProgress {
                 task.updateTitle(configuration.title, subtitle: configuration.subtitle(snapshot))
                 observer.continuationProgressed(snapshot)

@@ -39,6 +39,9 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let job: SerializedJob
         let task: Task<Void, Never>
     }
+    private var progressBoxes: [UUID: ProgressBox] = [:]
+    /// How often a job's progress may reach the delegate. Polled snapshots always see the latest.
+    private let progressEventInterval: Duration = .milliseconds(250)
     private var runningTasks: [UUID: RunningTask] = [:]
     private var lifecycleGeneration = 0
     private var startingGeneration: Int?
@@ -479,12 +482,16 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         let live = runningTasks.values.filter {
             $0.job.traits.background.requirement == .continuesInBackground
         }.map { $0.job.id }
-        let remaining = Set(queued + live).subtracting(outcomes.keys).count
+        let remainingIds = Set(queued + live).subtracting(outcomes.keys)
+        let running = remainingIds
+            .compactMap { id in progressBoxes[id]?.latest.map { RunningJobProgress(id: id, progress: $0) } }
+            .sorted { $0.id.uuidString < $1.id.uuidString }
         return BackgroundWorkSnapshot(
-            remaining: remaining,
+            remaining: remainingIds.count,
             succeeded: outcomes.values.filter { $0 == .succeeded }.count,
             failed: outcomes.values.filter { $0 == .failed }.count,
-            interrupted: outcomes.values.filter { $0 == .interrupted }.count
+            interrupted: outcomes.values.filter { $0 == .interrupted }.count,
+            running: running
         )
     }
 
@@ -520,11 +527,20 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             jobData: jobDataString
         ))
 
+        let reporter = makeProgressReporter(for: serialized.id, jobType: jobType)
+
         let clock = ContinuousClock()
         let start = clock.now
         do {
-            try await job.run(context: context)
+            if let reporting = job as? any ProgressReportingJob<Context> {
+                try await reporting.run(context: context, progress: reporter)
+            } else {
+                try await job.run(context: context)
+            }
+            closeProgress(for: serialized.id)
         } catch {
+            // Closed before any terminal event, so no progress event can follow it.
+            closeProgress(for: serialized.id)
             // Test the task flag rather than the error type. A real job surfaces
             // `URLError(.cancelled)`, or a `JobFailure` wrapping it, or its own domain error;
             // only the flag is reliable.
@@ -547,6 +563,19 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
         recordBackgroundOutcome(.succeeded, for: serialized)
         await jobStateDidChange()
         delegate?.jobCompleted(completedEvent)
+    }
+
+    private func makeProgressReporter(for id: UUID, jobType: Any.Type) -> JobProgressReporter {
+        let delegate = delegate
+        let box = ProgressBox(minimumEventInterval: progressEventInterval) { progress in
+            delegate?.jobProgressed(JobProgressedEvent(id: id, jobType: jobType, progress: progress))
+        }
+        progressBoxes[id] = box
+        return JobProgressReporter(box: box)
+    }
+
+    private func closeProgress(for id: UUID) {
+        progressBoxes.removeValue(forKey: id)?.close()
     }
 
     private func jobStateDidChange() async {

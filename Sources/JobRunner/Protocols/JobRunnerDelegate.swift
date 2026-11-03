@@ -10,6 +10,7 @@ import Foundation
 public protocol JobRunnerDelegate: Sendable {
     func jobEnqueued(_ event: JobEnqueuedEvent)
     func jobStarted(_ event: JobStartedEvent)
+    func jobProgressed(_ event: JobProgressedEvent)
     func jobCompleted(_ event: JobCompletedEvent)
     func jobFailed(_ event: JobFailedEvent)
     func jobInterrupted(_ event: JobInterruptedEvent)
@@ -18,6 +19,7 @@ public protocol JobRunnerDelegate: Sendable {
 extension JobRunnerDelegate {
     public func jobEnqueued(_ event: JobEnqueuedEvent) {}
     public func jobStarted(_ event: JobStartedEvent) {}
+    public func jobProgressed(_ event: JobProgressedEvent) {}
     public func jobCompleted(_ event: JobCompletedEvent) {}
     public func jobFailed(_ event: JobFailedEvent) {}
     public func jobInterrupted(_ event: JobInterruptedEvent) {}

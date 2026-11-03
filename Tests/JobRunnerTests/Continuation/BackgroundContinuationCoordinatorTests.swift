@@ -11,6 +11,7 @@ import Testing
 
 struct BackgroundContinuationCoordinatorTests {
     private let identifier = "com.example.app.continued-jobs"
+    private let units = BackgroundContinuationCoordinator.unitsPerJob
 
     private func makeCoordinator(
         scheduler: MockContinuationScheduler = MockContinuationScheduler(),
@@ -260,7 +261,7 @@ struct BackgroundContinuationCoordinatorTests {
         await runner.setRemaining(0, succeeded: 2)
         await drain.value
 
-        #expect(task.progress.totalUnitCount == 2)
+        #expect(task.progress.totalUnitCount == 2 * units)
         #expect(task.completions == [true])
         #expect(task.titles.map(\.subtitle).contains("0 succeeded, 0 failed, 2 remaining"))
         #expect(task.titles.map(\.subtitle).contains("1 succeeded, 0 failed, 1 remaining"))
@@ -281,10 +282,38 @@ struct BackgroundContinuationCoordinatorTests {
         await runner.setRemaining(0, succeeded: 3, failed: 1)
         await drain.value
 
-        #expect(task.progress.totalUnitCount == 4)
-        #expect(task.progress.completedUnitCount == 4)
+        #expect(task.progress.totalUnitCount == 4 * units)
+        #expect(task.progress.completedUnitCount == 4 * units)
         #expect(task.titles.map(\.subtitle).contains("1 succeeded, 0 failed, 3 remaining"))
         #expect(task.titles.last?.subtitle == "3 succeeded, 1 failed, 0 remaining")
+    }
+
+    @Test("A running job's reported fraction moves progress before any job finishes, and never backwards")
+    func drain_runningProgress_movesUnitsMonotonically() async throws {
+        let runner = StubContinuationRunner(remaining: 1)
+        let coordinator = makeCoordinator(runner: runner)
+        let task = MockContinuationTask()
+        let id = UUID()
+
+        let drain = Task { await coordinator.drain(task: task) }
+        await runner.setSnapshot(BackgroundWorkSnapshot(
+            remaining: 1,
+            running: [RunningJobProgress(id: id, progress: JobProgress(completed: 400, total: 1000))]
+        ))
+        try await waitForCondition { task.progress.completedUnitCount == 400 }
+
+        // A retry restarts the job at zero.
+        await runner.setSnapshot(BackgroundWorkSnapshot(
+            remaining: 1,
+            running: [RunningJobProgress(id: id, progress: JobProgress(completed: 0, total: 1000))]
+        ))
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(task.progress.completedUnitCount == 400)
+
+        await runner.setRemaining(0, succeeded: 1)
+        await drain.value
+        #expect(task.progress.completedUnitCount == units)
+        #expect(task.progress.totalUnitCount == units)
     }
 
     @Test("A drained continuation with failures reports unsuccessful completion")
@@ -294,8 +323,8 @@ struct BackgroundContinuationCoordinatorTests {
         let task = MockContinuationTask()
         await coordinator.drain(task: task)
         #expect(task.completions == [false])
-        #expect(task.progress.completedUnitCount == 10)
-        #expect(task.progress.totalUnitCount == 10)
+        #expect(task.progress.completedUnitCount == 10 * units)
+        #expect(task.progress.totalUnitCount == 10 * units)
         #expect(task.titles.last?.subtitle == "8 succeeded, 2 failed, 0 remaining")
         #expect(observer.outcomes == [.failed])
     }
@@ -307,8 +336,8 @@ struct BackgroundContinuationCoordinatorTests {
         let task = MockContinuationTask()
         await coordinator.drain(task: task)
         #expect(task.completions == [false])
-        #expect(task.progress.completedUnitCount == 1)
-        #expect(task.progress.totalUnitCount == 2)
+        #expect(task.progress.completedUnitCount == 1 * units)
+        #expect(task.progress.totalUnitCount == 2 * units)
         #expect(observer.outcomes == [.interrupted])
     }
 
