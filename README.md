@@ -184,6 +184,32 @@ func rollback(context: AppContext, error: any Error) async {
 ```
 
 
+### Progress
+
+A job that can say how far it has got conforms to `ProgressReportingJob` and implements
+`run(context:progress:)` instead of `run(context:)`. Every other job is unchanged.
+
+```swift
+struct UploadJob: ProgressReportingJob {
+  let fileURL: URL
+
+  func run(context: AppContext, progress: JobProgressReporter) async throws {
+    try await context.uploader.upload(fileURL) { sent, total in
+      progress.report(completed: sent, total: total, description: "\(sent / 1_000_000) of \(total / 1_000_000) MB")
+    }
+  }
+}
+```
+
+`report` is synchronous and safe from any thread, so it can be called straight from a delegate
+callback. The runner keeps the latest report per job, delivers `jobProgressed` to the delegate at
+most every 250 ms (sooner when the description changes), and drops reports once the job has
+finished. `description` is the job's own text for people to read; never log it.
+
+A running job's fraction is included in `BackgroundWorkSnapshot.running`, so a background
+continuation keeps moving during one long job instead of waiting for it to finish.
+
+
 ### Background continuation
 
 Jobs constrained `.continuesInBackground` can keep the process alive after the host backgrounds,

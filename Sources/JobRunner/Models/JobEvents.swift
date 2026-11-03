@@ -23,6 +23,14 @@ public struct JobStartedEvent: Sendable {
     public let jobData: String
 }
 
+/// A running job reported progress. Rate-limited by the runner; `progress.description` is free
+/// text, so don't log it.
+public struct JobProgressedEvent: Sendable {
+    public let id: UUID
+    public let jobType: Any.Type
+    public let progress: JobProgress
+}
+
 public struct JobCompletedEvent: Sendable {
     public let id: UUID
     public let jobType: Any.Type

@@ -118,6 +118,10 @@ actor StubContinuationRunner: BackgroundContinuationRunning {
         snapshot = BackgroundWorkSnapshot(remaining: remaining, succeeded: succeeded, failed: failed, interrupted: interrupted)
     }
 
+    func setSnapshot(_ snapshot: BackgroundWorkSnapshot) {
+        self.snapshot = snapshot
+    }
+
     func setRemaining(_ remaining: Int, succeeded: Int = 0, failed: Int = 0, interrupted: Int = 0) {
         snapshot = BackgroundWorkSnapshot(remaining: remaining, succeeded: succeeded, failed: failed, interrupted: interrupted)
     }
