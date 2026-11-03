@@ -133,6 +133,17 @@ struct JobProgressTests {
         try await run.value
     }
 
+    @Test("A callback reporter delivers every report")
+    func callbackReporter_deliversEveryReport() {
+        let events = EventLog()
+        let reporter = JobProgressReporter { events.append($0) }
+
+        reporter.report(completed: 1, total: 2, description: "a")
+        reporter.report(completed: 2, total: 2, description: "a")
+
+        #expect(events.all.map(\.completed) == [1, 2])
+    }
+
     @Test("Events are rate-limited, except when the description changes")
     func box_throttlesRepeatsButNotNewStages() {
         let events = EventLog()

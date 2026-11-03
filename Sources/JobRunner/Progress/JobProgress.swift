@@ -51,6 +51,16 @@ public extension ProgressReportingJob {
 public struct JobProgressReporter: Sendable {
     let box: ProgressBox
 
+    /// A reporter that hands every report to `onReport`, for running a job outside a runner, such
+    /// as in a test.
+    public init(onReport: @escaping @Sendable (JobProgress) -> Void) {
+        self.init(box: ProgressBox(minimumEventInterval: .zero, onEvent: onReport))
+    }
+
+    init(box: ProgressBox) {
+        self.box = box
+    }
+
     /// A reporter that drops everything, for running a job outside a runner.
     public static var discarding: JobProgressReporter {
         let box = ProgressBox(minimumEventInterval: .zero) { _ in }
