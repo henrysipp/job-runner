@@ -151,11 +151,69 @@ struct BackgroundContinuationCoordinatorTests {
         #expect(scheduler.submissions.count == 1)
     }
 
+    @Test("Starting a job after the enqueue-time session drained submits a new continuation")
+    func jobStarted_afterEnqueueSessionDrained_submitsAgain() async throws {
+        let scheduler = MockContinuationScheduler()
+        let observer = RecordingContinuationObserver()
+        // The job is still pending behind its parent, so the first poll counts nothing.
+        let coordinator = makeCoordinator(
+            scheduler: scheduler,
+            runner: StubContinuationRunner(remaining: 0),
+            observer: observer
+        )
+        coordinator.jobEnqueued(event(background: .continuesInBackground))
+        try await waitForCondition { scheduler.submissions.count == 1 }
+        await coordinator.drain(task: MockContinuationTask())
+        #expect(observer.outcomes == [.drained])
+
+        coordinator.jobStarted(startedEvent(background: .continuesInBackground))
+
+        try await waitForCondition { scheduler.submissions.count == 2 }
+        #expect(observer.skips.isEmpty)
+    }
+
+    @Test("Starting a foreground-only job does not submit")
+    func jobStarted_foregroundOnly_doesNotSubmit() async throws {
+        let scheduler = MockContinuationScheduler()
+        let observer = RecordingContinuationObserver()
+        let coordinator = makeCoordinator(scheduler: scheduler, observer: observer)
+
+        coordinator.jobStarted(startedEvent(background: .foregroundOnly))
+        try await waitForBackgroundJobs()
+
+        #expect(scheduler.submissions.isEmpty)
+        #expect(observer.skips.isEmpty)
+    }
+
+    @Test("Starting a job while a session is open skips as already active")
+    func jobStarted_sessionActive_skipsAsAlreadyActive() async throws {
+        let scheduler = MockContinuationScheduler()
+        let observer = RecordingContinuationObserver()
+        let coordinator = makeCoordinator(scheduler: scheduler, observer: observer)
+        coordinator.jobEnqueued(event(background: .continuesInBackground))
+        try await waitForCondition { scheduler.submissions.count == 1 }
+
+        coordinator.jobStarted(startedEvent(background: .continuesInBackground))
+
+        try await waitForCondition { observer.skips == [.alreadyActive] }
+        #expect(scheduler.submissions.count == 1)
+    }
+
     private func event(background: BackgroundPolicy) -> JobEnqueuedEvent {
         JobEnqueuedEvent(
             id: UUID(),
             jobType: Never.self,
             priority: .high,
+            traits: .init(background: background),
+            jobData: "{}"
+        )
+    }
+
+    private func startedEvent(background: BackgroundPolicy) -> JobStartedEvent {
+        JobStartedEvent(
+            id: UUID(),
+            jobType: Never.self,
+            attempt: 1,
             traits: .init(background: background),
             jobData: "{}"
         )

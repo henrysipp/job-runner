@@ -516,6 +516,7 @@ public actor JobRunner<Context: Sendable>: JobRunnerProtocol {
             id: serialized.id,
             jobType: jobType,
             attempt: serialized.attempts + 1,
+            traits: serialized.traits,
             jobData: jobDataString
         ))
 
