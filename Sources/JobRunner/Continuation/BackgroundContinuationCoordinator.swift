@@ -93,6 +93,13 @@ public actor BackgroundContinuationCoordinator: JobRunnerDelegate {
         Task { await self.requestContinuation() }
     }
 
+    /// A job enqueued behind others may not be counted when the enqueue-time session first polls,
+    /// so that session can drain before the job runs. Request again once it is actually running.
+    public nonisolated func jobStarted(_ event: JobStartedEvent) {
+        guard event.traits.background.requirement == .continuesInBackground else { return }
+        Task { await self.requestContinuation() }
+    }
+
     public func requestContinuation() async {
         guard configuration.isEnabled() else {
             observer.continuationSkipped(reason: .disabled)

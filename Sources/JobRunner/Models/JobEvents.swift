@@ -19,6 +19,7 @@ public struct JobStartedEvent: Sendable {
     public let id: UUID
     public let jobType: Any.Type
     public let attempt: Int
+    public let traits: TraitSnapshot
     public let jobData: String
 }
 
